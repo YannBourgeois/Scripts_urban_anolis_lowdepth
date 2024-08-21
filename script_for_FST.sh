@@ -25,15 +25,16 @@ SUBSET0=$(awk -F"\t" -v ArrayTaskID=$SLURM_ARRAY_TASK_ID '$1==ArrayTaskID {print
 SUBSET1=$(awk -F"\t" -v ArrayTaskID=$SLURM_ARRAY_TASK_ID '$1==ArrayTaskID {print $3}' $config)
 SUBSET2=$(awk -F"\t" -v ArrayTaskID=$SLURM_ARRAY_TASK_ID '$1==ArrayTaskID {print $4}' $config)
 
-./winsfs Results_for_FST_final/${SUBSET0}.saf.idx  Results_for_FST_final/${SUBSET1}.saf.idx > Results_for_FST_final/${SUBSET0}_${SUBSET2}.ml
-./winsfs Results_for_FST_final/${SUBSET0}.saf.idx  Results_for_FST_final/${SUBSET2}.saf.idx > Results_for_FST_final/${SUBSET0}_${SUBSET1}.ml
+./winsfs Results_for_FST_final/${SUBSET0}.saf.idx  Results_for_FST_final/${SUBSET1}.saf.idx > Results_for_FST_final/${SUBSET0}_${SUBSET1}.ml
+./winsfs Results_for_FST_final/${SUBSET0}.saf.idx  Results_for_FST_final/${SUBSET2}.saf.idx > Results_for_FST_final/${SUBSET0}_${SUBSET2}.ml
 ./winsfs Results_for_FST_final/${SUBSET1}.saf.idx  Results_for_FST_final/${SUBSET2}.saf.idx > Results_for_FST_final/${SUBSET1}_${SUBSET2}.ml
 
 grep -v "#" Results_for_FST_final/${SUBSET0}_${SUBSET2}.ml > Results_for_FST_final/${SUBSET0}_${SUBSET2}.ml2;mv Results_for_FST_final/${SUBSET0}_${SUBSET2}.ml2 Results_for_FST_final/${SUBSET0}_${SUBSET2}.ml
 grep -v "#" Results_for_FST_final/${SUBSET0}_${SUBSET1}.ml > Results_for_FST_final/${SUBSET0}_${SUBSET1}.ml2;mv Results_for_FST_final/${SUBSET0}_${SUBSET1}.ml2 Results_for_FST_final/${SUBSET0}_${SUBSET1}.ml
 grep -v "#" Results_for_FST_final/${SUBSET1}_${SUBSET2}.ml > Results_for_FST_final/${SUBSET1}_${SUBSET2}.ml2;mv Results_for_FST_final/${SUBSET1}_${SUBSET2}.ml2 Results_for_FST_final/${SUBSET1}_${SUBSET2}.ml
 
-realSFS fst index Results_for_FST_final/${SUBSET0}.saf.idx  Results_for_FST_final/${SUBSET1}.saf.idx Results_for_FST_final/${SUBSET2}.saf.idx -sfs Results_for_FST_final/${SUBSET0}_${SUBSET2}.ml -sfs Results_for_FST_final/${SUBSET0}_${SUBSET1}.ml -sfs Results_for_FST_final/${SUBSET1}_${SUBSET2}.ml -fstout Results_for_FST_final/FST_${SLURM_ARRAY_TASK_ID}_fst -whichFst 1
+realSFS fst index Results_for_FST_final/${SUBSET0}.saf.idx  Results_for_FST_final/${SUBSET1}.saf.idx Results_for_FST_final/${SUBSET2}.saf.idx -sfs Results_for_FST_final/${SUBSET0}_${SUBSET1}.ml -sfs Results_for_FST_final/${SUBSET0}_${SUBSET2}.ml -sfs Results_for_FST_final/${SUBSET1}_${SUBSET2}.ml -fstout Results_for_FST_final/FST_${SLURM_ARRAY_TASK_ID}_fst -whichFst 1 
+#whihFst 1: Bhatia Fst
 realSFS fst stats2 Results_for_FST_final/FST_${SLURM_ARRAY_TASK_ID}_fst.fst.idx -win 50000 -step 10000 -type 0 >  Results_for_FST_final/FST_${SLURM_ARRAY_TASK_ID}_50kb.fst2
 realSFS fst stats2 Results_for_FST_final/FST_${SLURM_ARRAY_TASK_ID}_fst.fst.idx -win 5000 -step 1000 -type 0 >  Results_for_FST_final/FST_${SLURM_ARRAY_TASK_ID}_5kb.fst2
 
