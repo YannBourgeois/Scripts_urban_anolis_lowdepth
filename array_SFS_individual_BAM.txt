@@ -1,0 +1,71 @@
+ 1	10_S137_mdup.withrg.csorted.cleaned.aligned.bam
+ 2	240_S166_mdup.withrg.csorted.cleaned.aligned.bam
+ 3	241_S118_mdup.withrg.csorted.cleaned.aligned.bam
+ 4	244_S115_mdup.withrg.csorted.cleaned.aligned.bam
+ 5	246_S116_mdup.withrg.csorted.cleaned.aligned.bam
+ 6	247_S175_mdup.withrg.csorted.cleaned.aligned.bam
+ 7	255_S168_mdup.withrg.csorted.cleaned.aligned.bam
+ 8	268_S167_mdup.withrg.csorted.cleaned.aligned.bam
+ 9	269_S165_mdup.withrg.csorted.cleaned.aligned.bam
+10	270_S171_mdup.withrg.csorted.cleaned.aligned.bam
+11	271_S110_mdup.withrg.csorted.cleaned.aligned.bam
+12	272_S117_mdup.withrg.csorted.cleaned.aligned.bam
+13	279_S155_mdup.withrg.csorted.cleaned.aligned.bam
+14	281_S163_mdup.withrg.csorted.cleaned.aligned.bam
+15	284_S169_mdup.withrg.csorted.cleaned.aligned.bam
+16	292_S164_mdup.withrg.csorted.cleaned.aligned.bam
+17	293_S173_mdup.withrg.csorted.cleaned.aligned.bam
+18	298_S153_mdup.withrg.csorted.cleaned.aligned.bam
+19	301_S156_mdup.withrg.csorted.cleaned.aligned.bam
+20	309_S174_mdup.withrg.csorted.cleaned.aligned.bam
+21	318_S159_mdup.withrg.csorted.cleaned.aligned.bam
+22	329_S108_mdup.withrg.csorted.cleaned.aligned.bam
+23	330_S162_mdup.withrg.csorted.cleaned.aligned.bam
+24	331_S150_mdup.withrg.csorted.cleaned.aligned.bam
+25	342_S151_mdup.withrg.csorted.cleaned.aligned.bam
+26	347_S170_mdup.withrg.csorted.cleaned.aligned.bam
+27	350_S114_mdup.withrg.csorted.cleaned.aligned.bam
+28	355_S149_mdup.withrg.csorted.cleaned.aligned.bam
+29	365_S177_mdup.withrg.csorted.cleaned.aligned.bam
+30	367_S113_mdup.withrg.csorted.cleaned.aligned.bam
+31	368_S107_mdup.withrg.csorted.cleaned.aligned.bam
+32	37_S136_mdup.withrg.csorted.cleaned.aligned.bam
+33	3_S139_mdup.withrg.csorted.cleaned.aligned.bam
+34	454_S142_mdup.withrg.csorted.cleaned.aligned.bam
+35	456_S144_mdup.withrg.csorted.cleaned.aligned.bam
+36	457_S143_mdup.withrg.csorted.cleaned.aligned.bam
+37	492_S132_mdup.withrg.csorted.cleaned.aligned.bam
+38	493_S131_mdup.withrg.csorted.cleaned.aligned.bam
+39	511_S127_mdup.withrg.csorted.cleaned.aligned.bam
+40	512_S102_mdup.withrg.csorted.cleaned.aligned.bam
+41	522_S103_mdup.withrg.csorted.cleaned.aligned.bam
+42	523_S126_mdup.withrg.csorted.cleaned.aligned.bam
+43	54_S133_mdup.withrg.csorted.cleaned.aligned.bam
+44	576_S101_mdup.withrg.csorted.cleaned.aligned.bam
+45	600_S100_mdup.withrg.csorted.cleaned.aligned.bam
+46	606_S129_mdup.withrg.csorted.cleaned.aligned.bam
+47	64_S135_mdup.withrg.csorted.cleaned.aligned.bam
+48	66_S105_mdup.withrg.csorted.cleaned.aligned.bam
+49	716_S124_mdup.withrg.csorted.cleaned.aligned.bam
+50	729_S122_mdup.withrg.csorted.cleaned.aligned.bam
+51	734_S97_mdup.withrg.csorted.cleaned.aligned.bam
+52	752_S112_mdup.withrg.csorted.cleaned.aligned.bam
+53	753_S121_mdup.withrg.csorted.cleaned.aligned.bam
+54	755_S98_mdup.withrg.csorted.cleaned.aligned.bam
+55	797_S119_mdup.withrg.csorted.cleaned.aligned.bam
+56	Ac10_4_S18_mdup.withrg.csorted.cleaned.aligned.bam
+57	Ac2_6_S3_mdup.withrg.csorted.cleaned.aligned.bam
+58	Ac2_7_S4_mdup.withrg.csorted.cleaned.aligned.bam
+59	Ac3_1_S5_mdup.withrg.csorted.cleaned.aligned.bam
+60	Ac4_3_S6_mdup.withrg.csorted.cleaned.aligned.bam
+61	Ac5_1_S7_mdup.withrg.csorted.cleaned.aligned.bam
+62	Ac5_2_S8_mdup.withrg.csorted.cleaned.aligned.bam
+63	Ac6_1_S9_mdup.withrg.csorted.cleaned.aligned.bam
+64	Ac7_1_S10_mdup.withrg.csorted.cleaned.aligned.bam
+65	Ac8_12_S12_mdup.withrg.csorted.cleaned.aligned.bam
+66	Ac8_3_S11_mdup.withrg.csorted.cleaned.aligned.bam
+67	Ac9_1_S13_mdup.withrg.csorted.cleaned.aligned.bam
+68	Ac9_3_S14_mdup.withrg.csorted.cleaned.aligned.bam
+69	Ac9_4_S15_mdup.withrg.csorted.cleaned.aligned.bam
+70	Ac9_5_S16_mdup.withrg.csorted.cleaned.aligned.bam
+71	Ac9_7_S17_mdup.withrg.csorted.cleaned.aligned.bam
