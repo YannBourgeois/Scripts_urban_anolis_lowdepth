@@ -1,3 +1,0 @@
- 1	GA.list
- 2	countryside.list
- 3	urban_unrelated.list
