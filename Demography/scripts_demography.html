@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.2.475">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Demographic_inference</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1.6em;
+  vertical-align: middle;
+}
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { color: #008000; } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { color: #008000; font-weight: bold; } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+</style>
+
+
+<script src="scripts_demography_files/libs/clipboard/clipboard.min.js"></script>
+<script src="scripts_demography_files/libs/quarto-html/quarto.js"></script>
+<script src="scripts_demography_files/libs/quarto-html/popper.min.js"></script>
+<script src="scripts_demography_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="scripts_demography_files/libs/quarto-html/anchor.min.js"></script>
+<link href="scripts_demography_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="scripts_demography_files/libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="scripts_demography_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="scripts_demography_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="scripts_demography_files/libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Demographic_inference</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+</header>
+
+<p>We will combine all ML files for the urban/country comparison</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">##keeping it as a loop in case more than one pair of populations</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> input_file <span class="kw">in</span> Countryside_NewOrleans.ml</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="cf">do</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="bu">echo</span> <span class="st">"37 99 unfolded"</span> <span class="kw">|</span> <span class="fu">cat</span> <span class="at">-</span> <span class="st">"</span><span class="va">$input_file</span><span class="st">"</span> <span class="op">&gt;</span> temp <span class="kw">&amp;&amp;</span> <span class="fu">mv</span> temp <span class="st">"</span><span class="va">$input_file</span><span class="st">"</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="cf">done</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>We applied a threshold for missing individuals of 32/49 (urban) and 12/18 (countryside). So we can project to 64 and 24 alleles.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(reticulate)</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">use_python</span>(<span class="st">"/home/yannbourgeois/mambaforge/bin/python3"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> dadi</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> glob</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> os</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Directory containing the files</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>directory <span class="op">=</span> <span class="st">'./'</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="co"># Loop over all files in the directory that match a pattern (e.g., all .txt files)</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> file_path <span class="kw">in</span> glob.glob(os.path.join(directory, <span class="st">'*ml'</span>)):</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> os.path.isfile(file_path):</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>        <span class="bu">print</span>(<span class="ss">f"Processing file: </span><span class="sc">{</span>os<span class="sc">.</span>path<span class="sc">.</span>basename(file_path)<span class="sc">}</span><span class="ss">"</span>)</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>        <span class="co"># Add your code here to process the file</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>        fs <span class="op">=</span> dadi.Spectrum.from_file(file_path) <span class="co">###ml file but with a dadi header</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>        <span class="co">#fs2=fs.fold()</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>        fs3<span class="op">=</span>fs.project([<span class="dv">24</span>,<span class="dv">64</span>])</span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>        <span class="co">#fs2.to_file("folded_spectrum.sfs")</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>        fs3.to_file(<span class="ss">f"projected_</span><span class="sc">{</span>os<span class="sc">.</span>path<span class="sc">.</span>basename(file_path)<span class="sc">}</span><span class="ss">"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Processing file: Countryside_NewOrleans.ml</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> matplotlib.pyplot <span class="im">as</span> plt</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>dadi.Plotting.plot_single_2d_sfs(fs3,vmin<span class="op">=</span><span class="dv">1</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>&lt;matplotlib.colorbar.Colorbar object at 0x77cb4624efe0&gt;</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>plt.show()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<p><img src="scripts_demography_files/figure-html/unnamed-chunk-3-1.png" class="img-fluid" width="672"></p>
+</div>
+<div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>plt.savefig(<span class="st">"AFS_urban_country.jpg"</span>) <span class="co">#save as jpg</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co">#sfs=read.table("country_urban_demo/folded_proj_spectrum.sfs")</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="co">#mat1 &lt;- matrix(sfs[1,],nrow=29,ncol=69,byrow=TRUE)</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="co">#colnames(mat1)=paste("d0",seq(0,68),sep="_")</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="co">#rownames(mat1)=paste("d1",seq(0,28),sep="_")</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a><span class="co">#write.table(mat1,quote=F,sep="\t",file="country_urban_demo/Demography_jointMAFpop1_0.obs")</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<p><img src="scripts_demography_files/figure-html/unnamed-chunk-3-2.png" class="img-fluid" width="672"></p>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> input_file <span class="kw">in</span> projected<span class="pp">*</span>ml</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="cf">do</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="fu">sed</span> 1d <span class="va">$input_file</span> <span class="kw">|</span> <span class="fu">sed</span> 2d <span class="op">&gt;</span> temp <span class="kw">&amp;&amp;</span> <span class="fu">mv</span> temp <span class="va">$input_file</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="cf">done</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>proj_a<span class="ot">=</span><span class="dv">65</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>proj_b<span class="ot">=</span><span class="dv">25</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>sfs<span class="ot">=</span><span class="fu">read.table</span>(<span class="st">"projected_Countryside_NewOrleans.ml"</span>)</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>mat1 <span class="ot">&lt;-</span> <span class="fu">matrix</span>(sfs[<span class="dv">1</span>,],<span class="at">nrow=</span>proj_b,<span class="at">ncol=</span>proj_a,<span class="at">byrow=</span><span class="cn">TRUE</span>)</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="fu">colnames</span>(mat1)<span class="ot">=</span><span class="fu">paste</span>(<span class="st">"d0"</span>,<span class="fu">seq</span>(<span class="dv">0</span>,proj_a<span class="dv">-1</span>),<span class="at">sep=</span><span class="st">"_"</span>)</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="fu">rownames</span>(mat1)<span class="ot">=</span><span class="fu">paste</span>(<span class="st">"d1"</span>,<span class="fu">seq</span>(<span class="dv">0</span>,proj_b<span class="dv">-1</span>),<span class="at">sep=</span><span class="st">"_"</span>)</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="fu">write.table</span>(mat1,<span class="at">quote=</span>F,<span class="at">sep=</span><span class="st">"</span><span class="sc">\t</span><span class="st">"</span>,<span class="at">file=</span><span class="st">"Demography_jointDAFpop1_0.obs"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>For fastsimcoal, just add “1 observations” as a first row to the generated file, and two tabulations before the second row.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co">#!/bin/bash</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="co">#SBATCH --mem=32GB</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="co">#SBATCH --job-name=fsc</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="co">#SBATCH --time=12:00:00</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="co">#SBATCH --partition fast</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="co">#SBATCH --array=1-100</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a><span class="co">#SBATCH --nodes=1</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a><span class="co">#SBATCH --output=fsc%J.out</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="co">#SBATCH --error=fsc%J.err</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a><span class="va">i</span><span class="op">=</span><span class="va">$SLURM_ARRAY_TASK_ID</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a><span class="fu">mkdir</span> replicate_<span class="va">$i</span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> replicate_<span class="va">$i</span></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a><span class="fu">cp</span> ../fsc28 .</span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a><span class="fu">cp</span> ../Demography.<span class="pp">*</span> .</span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a><span class="fu">cp</span> ../Demography_<span class="pp">*</span> .</span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a><span class="ex">./fsc28</span> <span class="at">-t</span> Demography.tpl <span class="at">-n</span> 10000 <span class="at">-d</span> <span class="at">-e</span> Demography.est <span class="at">-M</span> <span class="at">-L</span> 40 <span class="at">-q</span> <span class="at">-c</span> 12 <span class="at">--no-singletons</span></span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> ..</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>Now that we have a demographic scenario, we can perform simulations using ms and discoal. First, we use R to convert without suffering too much the FSC scenario into a ms command</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="do">###Best fastsimcoal model</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="do">##ANCSIZE2  ANCSIZE3    ANCSIZE4    NPOP1   NPOP2   TDIV    MIG21   MIG12   TVAR3   TVAR4</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="do">##635816    61542   207976  155 19663   32  0.0563967   1.70E-04    50784   106177</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>mut <span class="ot">&lt;-</span> <span class="fl">1.7e-9</span> <span class="co"># mutation rate per base per generation</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>No <span class="ot">&lt;-</span> <span class="dv">155</span><span class="sc">/</span><span class="dv">2</span> <span class="co"># present diploid effective size for the Gulf Atlantic urban population (pop 1)</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>ms <span class="ot">&lt;-</span> <span class="fu">paste</span>(<span class="st">"88"</span>, <span class="co"># total number of sampled chromosomes</span></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>            <span class="st">"1"</span>, <span class="co"># number of simulation replicates -- MUST BE "1"</span></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-t"</span>,<span class="dv">4</span><span class="sc">*</span>No<span class="sc">*</span>mut<span class="sc">*</span><span class="dv">50000</span>, <span class="co"># population mutation rate $\theta$ = 4*No*mu</span></span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-I 2 64 24"</span>, <span class="co"># population structure</span></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-m 1 2"</span>,(<span class="dv">4</span><span class="sc">*</span>No<span class="sc">*</span><span class="fl">1.7e-04</span>), <span class="st">"-m 2 1"</span>, (<span class="dv">4</span><span class="sc">*</span>No<span class="sc">*</span><span class="fl">0.0563967</span>), </span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-en 0 2"</span>,(<span class="dv">19663</span><span class="sc">/</span><span class="dv">2</span>)<span class="sc">/</span>No, <span class="co"># population size rescaling for pop 2 (country)</span></span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-ej"</span>,<span class="dv">32</span><span class="sc">/</span>(<span class="dv">4</span><span class="sc">*</span>No),<span class="st">"1 2"</span>, <span class="co">#split</span></span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-en"</span>,<span class="dv">32</span><span class="sc">/</span>(<span class="dv">4</span><span class="sc">*</span>No),<span class="dv">2</span>,(<span class="dv">635816</span><span class="sc">/</span><span class="dv">2</span>)<span class="sc">/</span>No, <span class="co">#GA ancestral pop size before split</span></span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-en"</span>,<span class="dv">50784</span><span class="sc">/</span>(<span class="dv">4</span><span class="sc">*</span>No),<span class="dv">2</span>,(<span class="dv">61542</span><span class="sc">/</span><span class="dv">2</span>)<span class="sc">/</span>No,</span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-en"</span>,<span class="dv">106177</span><span class="sc">/</span>(<span class="dv">4</span><span class="sc">*</span>No),<span class="dv">2</span>,(<span class="dv">207976</span><span class="sc">/</span><span class="dv">2</span>)<span class="sc">/</span>No)</span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>ms</span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a><span class="do">####Rough estimate if background selection: N0 reduced by 10 times, but times kept the same (so increase them by 10). Absolute migration rates stay the same (so effectively less gene flow)</span></span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a>ms_background <span class="ot">&lt;-</span> <span class="fu">paste</span>(<span class="st">"88"</span>, <span class="co"># total number of sampled chromosomes</span></span>
+<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a>            <span class="st">"1"</span>, <span class="co"># number of simulation replicates -- MUST BE "1"</span></span>
+<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-t"</span>,<span class="fl">0.1</span><span class="sc">*</span><span class="dv">4</span><span class="sc">*</span>No<span class="sc">*</span>mut<span class="sc">*</span><span class="dv">50000</span>, <span class="co"># population mutation rate $\theta$ = 4*No*mu</span></span>
+<span id="cb12-26"><a href="#cb12-26" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-I 2 64 24"</span>, <span class="co"># population structure</span></span>
+<span id="cb12-27"><a href="#cb12-27" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-m 1 2"</span>,(<span class="dv">4</span><span class="sc">*</span><span class="fl">0.1</span><span class="sc">*</span>No<span class="sc">*</span><span class="fl">1.7e-04</span>) , <span class="st">"-m 2 1"</span>, (<span class="dv">4</span><span class="sc">*</span><span class="fl">0.1</span><span class="sc">*</span>No<span class="sc">*</span><span class="fl">0.0563967</span>), </span>
+<span id="cb12-28"><a href="#cb12-28" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-en 0 2"</span>,(<span class="dv">19663</span><span class="sc">/</span><span class="dv">2</span>)<span class="sc">/</span>No, <span class="co"># population size rescaling for pop 2 (urban)</span></span>
+<span id="cb12-29"><a href="#cb12-29" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-ej"</span>,<span class="dv">32</span><span class="sc">/</span>(<span class="dv">4</span><span class="sc">*</span><span class="fl">0.1</span><span class="sc">*</span>No),<span class="st">"1 2"</span>, <span class="co">#split</span></span>
+<span id="cb12-30"><a href="#cb12-30" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-en"</span>,<span class="dv">32</span><span class="sc">/</span>(<span class="dv">4</span><span class="sc">*</span><span class="fl">0.1</span><span class="sc">*</span>No),<span class="dv">2</span>,(<span class="dv">635816</span><span class="sc">/</span><span class="dv">2</span>)<span class="sc">/</span>No, <span class="co">#GA ancestral pop size before split</span></span>
+<span id="cb12-31"><a href="#cb12-31" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-en"</span>,<span class="dv">50784</span><span class="sc">/</span>(<span class="dv">4</span><span class="sc">*</span><span class="fl">0.1</span><span class="sc">*</span>No),<span class="dv">2</span>,(<span class="dv">61542</span><span class="sc">/</span><span class="dv">2</span>)<span class="sc">/</span>No,</span>
+<span id="cb12-32"><a href="#cb12-32" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-en"</span>,<span class="dv">106177</span><span class="sc">/</span>(<span class="dv">4</span><span class="sc">*</span><span class="fl">0.1</span><span class="sc">*</span>No),<span class="dv">2</span>,(<span class="dv">207976</span><span class="sc">/</span><span class="dv">2</span>)<span class="sc">/</span>No)</span>
+<span id="cb12-33"><a href="#cb12-33" aria-hidden="true" tabindex="-1"></a>ms_background</span>
+<span id="cb12-34"><a href="#cb12-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-35"><a href="#cb12-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-36"><a href="#cb12-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-37"><a href="#cb12-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-38"><a href="#cb12-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-39"><a href="#cb12-39" aria-hidden="true" tabindex="-1"></a><span class="do">####Assuming that only the urban population is under very strong drift</span></span>
+<span id="cb12-40"><a href="#cb12-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-41"><a href="#cb12-41" aria-hidden="true" tabindex="-1"></a>ms_background <span class="ot">&lt;-</span> <span class="fu">paste</span>(<span class="st">"88"</span>, <span class="co"># total number of sampled chromosomes</span></span>
+<span id="cb12-42"><a href="#cb12-42" aria-hidden="true" tabindex="-1"></a>            <span class="st">"1"</span>, <span class="co"># number of simulation replicates -- MUST BE "1"</span></span>
+<span id="cb12-43"><a href="#cb12-43" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-t"</span>,<span class="fl">0.1</span><span class="sc">*</span><span class="dv">4</span><span class="sc">*</span>No<span class="sc">*</span>mut<span class="sc">*</span><span class="dv">50000</span>, <span class="co"># population mutation rate $\theta$ = 4*No*mu</span></span>
+<span id="cb12-44"><a href="#cb12-44" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-I 2 64 24"</span>, <span class="co"># population structure</span></span>
+<span id="cb12-45"><a href="#cb12-45" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-m 1 2"</span>,(<span class="dv">4</span><span class="sc">*</span><span class="fl">0.1</span><span class="sc">*</span>No<span class="sc">*</span><span class="fl">1.7e-04</span>) , <span class="st">"-m 2 1"</span>, (<span class="dv">4</span><span class="sc">*</span><span class="fl">0.1</span><span class="sc">*</span>No<span class="sc">*</span><span class="fl">0.0563967</span>), </span>
+<span id="cb12-46"><a href="#cb12-46" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-en 0 2"</span>,(<span class="dv">19663</span><span class="sc">/</span><span class="dv">2</span>)<span class="sc">/</span>No, <span class="co"># population size rescaling for pop 2 (urban)</span></span>
+<span id="cb12-47"><a href="#cb12-47" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-ej"</span>,<span class="dv">32</span><span class="sc">/</span>(<span class="dv">4</span><span class="sc">*</span>No),<span class="st">"1 2"</span>, <span class="co">#split</span></span>
+<span id="cb12-48"><a href="#cb12-48" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-en"</span>,<span class="dv">32</span><span class="sc">/</span>(<span class="dv">4</span><span class="sc">*</span>No),<span class="dv">2</span>,(<span class="dv">635816</span><span class="sc">/</span><span class="dv">2</span>)<span class="sc">/</span>No, <span class="co">#GA ancestral pop size before split</span></span>
+<span id="cb12-49"><a href="#cb12-49" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-en"</span>,<span class="dv">50784</span><span class="sc">/</span>(<span class="dv">4</span><span class="sc">*</span>No),<span class="dv">2</span>,(<span class="dv">61542</span><span class="sc">/</span><span class="dv">2</span>)<span class="sc">/</span>No,</span>
+<span id="cb12-50"><a href="#cb12-50" aria-hidden="true" tabindex="-1"></a>            <span class="st">"-en"</span>,<span class="dv">106177</span><span class="sc">/</span>(<span class="dv">4</span><span class="sc">*</span>No),<span class="dv">2</span>,(<span class="dv">207976</span><span class="sc">/</span><span class="dv">2</span>)<span class="sc">/</span>No)</span>
+<span id="cb12-51"><a href="#cb12-51" aria-hidden="true" tabindex="-1"></a>ms_background</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<p>The Python scripts launched in the commands below use sci-kit allel to estimate Bhatia’s Fst. Resources can be found here:</p>
+<p>Estimate Fst from sci-kit https://scikit-allel.readthedocs.io/en/stable/stats/fst.html</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb13"><pre class="sourceCode bash code-with-copy"><code class="sourceCode bash"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> Simulations</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="co">###Scenario without singletons, with 50kb length. Most up to date here!</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span> Fst_Bhatia_distribution_neutral_50kb.txt</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="dt">{</span><span class="dv">1</span><span class="dt">..</span><span class="dv">1000</span><span class="dt">}</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a><span class="cf">do</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="ex">ms</span> 88 1 <span class="at">-t</span> 0.02635 <span class="at">-r</span> 0.02635 50000 <span class="at">-I</span> 2 64 24 <span class="at">-m</span> 1 2 0.0527 <span class="at">-m</span> 2 1 17.482977 <span class="at">-en</span> 0 2 126.858064516129 <span class="at">-ej</span> 0.103225806451613 1 2 <span class="at">-en</span> 0.103225806451613 2 4102.03870967742 <span class="at">-en</span> 163.81935483871 2 397.045161290323 <span class="at">-en</span> 342.506451612903 2 1341.78064516129 <span class="kw">|</span> <span class="ex">./ms2vcf</span> <span class="at">-length</span> 50000 <span class="op">&gt;</span> simulation_neutral.vcf</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> script_python_Fst.py <span class="op">&gt;&gt;</span> Fst_Bhatia_distribution_neutral_50kb.txt</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a><span class="cf">done</span></span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a><span class="co">####Rough estimate if background selection: N0 reduced by 10 times, but times kept the same (so values increased by 10 here). Absolute migration rates stay the same (so less effective gene flow Nxm)</span></span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span> Fst_Bhatia_distribution_background_50kb.txt</span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="dt">{</span><span class="dv">1</span><span class="dt">..</span><span class="dv">1000</span><span class="dt">}</span></span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a><span class="cf">do</span></span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a><span class="ex">ms</span> 88 1 <span class="at">-t</span> 0.002635 <span class="at">-r</span> 0.002635 50000 <span class="at">-I</span> 2 64 24 <span class="at">-m</span> 1 2 0.00527 <span class="at">-m</span> 2 1 1.7482977 <span class="at">-en</span> 0 2 126.858064516129 <span class="at">-ej</span> 1.03225806451613 1 2 <span class="at">-en</span> 1.03225806451613 2 4102.03870967742 <span class="at">-en</span> 1638.1935483871 2 397.045161290323 <span class="at">-en</span> 3425.06451612903 2 1341.78064516129  <span class="kw">|</span> <span class="ex">./ms2vcf</span> <span class="at">-length</span> 50000 <span class="op">&gt;</span> simulation_neutral.vcf</span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> script_python_Fst.py <span class="op">&gt;&gt;</span> Fst_Bhatia_distribution_background_50kb.txt</span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a><span class="cf">done</span></span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a><span class="co">#####Rough estimate of very strong bottleneck only in the urban population</span></span>
+<span id="cb13-24"><a href="#cb13-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-25"><a href="#cb13-25" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span> Fst_Bhatia_distribution_bottle_50kb.txt</span>
+<span id="cb13-26"><a href="#cb13-26" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="dt">{</span><span class="dv">1</span><span class="dt">..</span><span class="dv">1000</span><span class="dt">}</span></span>
+<span id="cb13-27"><a href="#cb13-27" aria-hidden="true" tabindex="-1"></a><span class="cf">do</span></span>
+<span id="cb13-28"><a href="#cb13-28" aria-hidden="true" tabindex="-1"></a><span class="ex">ms</span> 88 1 <span class="at">-t</span> 0.002635 <span class="at">-r</span> 0.002635 50000 <span class="at">-I</span> 2 64 24 <span class="at">-m</span> 1 2 0.00527 <span class="at">-m</span> 2 1 1.7482977 <span class="at">-en</span> 0 2 126.858064516129 <span class="at">-ej</span> 0.103225806451613 1 2 <span class="at">-en</span> 0.103225806451613 2 4102.03870967742 <span class="at">-en</span> 163.81935483871 2 397.045161290323 <span class="at">-en</span> 342.506451612903 2 1341.78064516129<span class="kw">|</span> <span class="ex">./ms2vcf</span> <span class="at">-length</span> 50000 <span class="op">&gt;</span> simulation_neutral.vcf</span>
+<span id="cb13-29"><a href="#cb13-29" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> script_python_Fst.py <span class="op">&gt;&gt;</span> Fst_Bhatia_distribution_bottle_50kb.txt</span>
+<span id="cb13-30"><a href="#cb13-30" aria-hidden="true" tabindex="-1"></a><span class="cf">done</span></span>
+<span id="cb13-31"><a href="#cb13-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-32"><a href="#cb13-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-33"><a href="#cb13-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-34"><a href="#cb13-34" aria-hidden="true" tabindex="-1"></a><span class="co">###discoal only in population #0 (0-indexed, for Christ's sake...), so need to specify urban as the reference. Ensures that sweep is fixed.</span></span>
+<span id="cb13-35"><a href="#cb13-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-36"><a href="#cb13-36" aria-hidden="true" tabindex="-1"></a><span class="co">###For recombination: 4*1.7e-9e-10*1582*50000 (just taking r=mu here)</span></span>
+<span id="cb13-37"><a href="#cb13-37" aria-hidden="true" tabindex="-1"></a><span class="co">###For mutation  4*1.7e-9*1582*50000</span></span>
+<span id="cb13-38"><a href="#cb13-38" aria-hidden="true" tabindex="-1"></a><span class="co">###-Sc is the onset of selection (backward). time, pop index, selection for each genotype. Fixed.</span></span>
+<span id="cb13-39"><a href="#cb13-39" aria-hidden="true" tabindex="-1"></a><span class="co">###SI specifies when selection starts (forward in time part). time, npop, freq in pop 1, freq in pop 2. Time can vary in MacSwan</span></span>
+<span id="cb13-40"><a href="#cb13-40" aria-hidden="true" tabindex="-1"></a><span class="co">###Sp position along the sequence</span></span>
+<span id="cb13-41"><a href="#cb13-41" aria-hidden="true" tabindex="-1"></a><span class="co">###SForceKeep is the same as SFC</span></span>
+<span id="cb13-42"><a href="#cb13-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-43"><a href="#cb13-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-44"><a href="#cb13-44" aria-hidden="true" tabindex="-1"></a><span class="fu">rm</span> Fst_Bhatia_distribution_selection.txt</span>
+<span id="cb13-45"><a href="#cb13-45" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="dt">{</span><span class="dv">1</span><span class="dt">..</span><span class="dv">1000</span><span class="dt">}</span></span>
+<span id="cb13-46"><a href="#cb13-46" aria-hidden="true" tabindex="-1"></a><span class="cf">do</span></span>
+<span id="cb13-47"><a href="#cb13-47" aria-hidden="true" tabindex="-1"></a><span class="ex">./discoal/discoal</span> 88 1 50000 <span class="at">-t</span> 0.02635 <span class="at">-r</span> 0.02635 <span class="at">-p</span> 2 64 24 <span class="at">-m</span> 0 1 0.0527 <span class="at">-m</span> 1 0 17.482977 <span class="at">-en</span> 0 1 126.858064516129 <span class="at">-ed</span> 0.103225806451613 0 1 <span class="dt">\</span></span>
+<span id="cb13-48"><a href="#cb13-48" aria-hidden="true" tabindex="-1"></a>-en 0.103225806451613 1 4102.03870967742 <span class="at">-en</span> 163.81935483871 1 397.045161290323 <span class="at">-en</span> 342.506451612903 1 1341.78064516129 <span class="dt">\</span></span>
+<span id="cb13-49"><a href="#cb13-49" aria-hidden="true" tabindex="-1"></a>-a 155 <span class="at">-ws</span> 0 <span class="at">-x</span> 0.5 <span class="kw">|</span> <span class="ex">./ms2vcf</span> <span class="at">-length</span> 50000 <span class="op">&gt;</span> simulation_sweep.vcf</span>
+<span id="cb13-50"><a href="#cb13-50" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> script_python_Fst_selection.py <span class="op">&gt;&gt;</span> Fst_Bhatia_distribution_selection.txt</span>
+<span id="cb13-51"><a href="#cb13-51" aria-hidden="true" tabindex="-1"></a><span class="cf">done</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(<span class="st">"grImport2"</span>)</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(grConvert)</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(data.table)</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggpubr)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Loading required package: ggplot2</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggforce)</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gridGraphics)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Loading required package: grid</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>PBS<span class="ot">=</span><span class="fu">as.data.frame</span>(<span class="fu">fread</span>(<span class="st">"All_results_50kb_FST_PBS_ANGSD_countryside.txt"</span>,<span class="at">h=</span>T))</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>PBS2<span class="ot">&lt;-</span> PBS[PBS<span class="sc">$</span>midPos <span class="sc">%%</span> <span class="dv">25000</span> <span class="sc">==</span> <span class="dv">0</span> <span class="sc">&amp;</span> PBS<span class="sc">$</span>Nsites<span class="sc">&gt;</span><span class="dv">29999</span>, ]</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>PBS<span class="ot">=</span>PBS2</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a><span class="fu">mean</span>(PBS<span class="sc">$</span>Fst12)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 0.02739604</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sd</span>(PBS<span class="sc">$</span>Fst12)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 0.03296674</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="fu">quantile</span>(PBS<span class="sc">$</span>Fst12,<span class="fl">0.95</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>      95% 
+0.0932038 </code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>table<span class="ot">=</span><span class="fu">read.table</span>(<span class="st">"Simulations/Fst_Bhatia_distribution_neutral_50kb.txt"</span>,<span class="at">h=</span>F)</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>sel<span class="ot">=</span><span class="fu">read.table</span>(<span class="st">"Simulations/Fst_Bhatia_distribution_selection.txt"</span>)</span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>back<span class="ot">=</span><span class="fu">read.table</span>(<span class="st">"Simulations/Fst_Bhatia_distribution_background_50kb.txt"</span>,<span class="at">h=</span>F)</span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>bottle<span class="ot">=</span><span class="fu">read.table</span>(<span class="st">"Simulations/Fst_Bhatia_distribution_bottle_50kb.txt"</span>,<span class="at">h=</span>F)</span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(<span class="fu">density</span>(PBS<span class="sc">$</span>Fst12,<span class="at">bw=</span><span class="fl">0.018</span>),<span class="at">type=</span><span class="st">"l"</span>,<span class="at">col=</span><span class="st">"darkgrey"</span>,<span class="at">lwd=</span><span class="dv">2</span>,<span class="at">lty=</span><span class="dv">2</span>,<span class="at">main=</span><span class="st">"Observed and expected distributions for Fst"</span>,<span class="at">xlab=</span><span class="st">"Fst"</span>,<span class="at">xlim=</span><span class="fu">c</span>(<span class="dv">0</span>,<span class="fl">0.8</span>))</span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(<span class="fu">density</span>(table<span class="sc">$</span>V1,<span class="at">bw=</span><span class="fl">0.01</span>),<span class="at">xlim=</span><span class="fu">c</span>(<span class="dv">0</span>,<span class="dv">1</span>),<span class="at">lwd=</span><span class="dv">2</span>,<span class="at">type=</span><span class="st">"l"</span>)</span>
+<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(<span class="fu">density</span>(sel<span class="sc">$</span>V1),<span class="at">type=</span><span class="st">"l"</span>,<span class="at">col=</span><span class="st">"red"</span>,<span class="at">lwd=</span><span class="dv">2</span>)</span>
+<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(<span class="fu">density</span>(back<span class="sc">$</span>V1),<span class="at">type=</span><span class="st">"l"</span>,<span class="at">col=</span><span class="st">"blue"</span>,<span class="at">lwd=</span><span class="dv">2</span>)</span>
+<span id="cb24-11"><a href="#cb24-11" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(<span class="fu">density</span>(bottle<span class="sc">$</span>V1),<span class="at">type=</span><span class="st">"l"</span>,<span class="at">col=</span><span class="st">"darkgreen"</span>,<span class="at">lwd=</span><span class="dv">2</span>)</span>
+<span id="cb24-12"><a href="#cb24-12" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v=</span><span class="fl">0.2</span>,<span class="at">lty=</span><span class="dv">3</span>,<span class="at">lwd=</span><span class="dv">2</span>,<span class="at">col=</span><span class="st">"blue"</span>)</span>
+<span id="cb24-13"><a href="#cb24-13" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v=</span><span class="fl">0.35</span>,<span class="at">lty=</span><span class="dv">3</span>,<span class="at">lwd=</span><span class="dv">2</span>,<span class="at">col=</span><span class="st">"red"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<p><img src="scripts_demography_files/figure-html/unnamed-chunk-9-1.png" class="img-fluid" width="672"></p>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>density_Fst12 <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">x =</span> <span class="fu">density</span>(PBS<span class="sc">$</span>Fst12, <span class="at">bw =</span> <span class="fl">0.018</span>)<span class="sc">$</span>x, <span class="at">y =</span> <span class="fu">density</span>(PBS<span class="sc">$</span>Fst12, <span class="at">bw =</span> <span class="fl">0.018</span>)<span class="sc">$</span>y)</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>density_table <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">x =</span> <span class="fu">density</span>(table<span class="sc">$</span>V1, <span class="at">bw =</span> <span class="fl">0.01</span>)<span class="sc">$</span>x, <span class="at">y =</span> <span class="fu">density</span>(table<span class="sc">$</span>V1, <span class="at">bw =</span> <span class="fl">0.01</span>)<span class="sc">$</span>y)</span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>density_sel <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">x =</span> <span class="fu">density</span>(sel<span class="sc">$</span>V1)<span class="sc">$</span>x, <span class="at">y =</span> <span class="fu">density</span>(sel<span class="sc">$</span>V1)<span class="sc">$</span>y)</span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>density_back <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">x =</span> <span class="fu">density</span>(back<span class="sc">$</span>V1)<span class="sc">$</span>x, <span class="at">y =</span> <span class="fu">density</span>(back<span class="sc">$</span>V1)<span class="sc">$</span>y)</span>
+<span id="cb25-5"><a href="#cb25-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb25-6"><a href="#cb25-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Create ggplot object</span></span>
+<span id="cb25-7"><a href="#cb25-7" aria-hidden="true" tabindex="-1"></a>Simulations<span class="ot">=</span><span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb25-8"><a href="#cb25-8" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Add density for PBS$Fst12</span></span>
+<span id="cb25-9"><a href="#cb25-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> density_Fst12, <span class="fu">aes</span>(<span class="at">x =</span> x, <span class="at">y =</span> y), <span class="at">color =</span> <span class="st">"darkgrey"</span>, <span class="at">linetype =</span> <span class="st">"dashed"</span>, <span class="at">size =</span> <span class="fl">1.5</span>) <span class="sc">+</span></span>
+<span id="cb25-10"><a href="#cb25-10" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb25-11"><a href="#cb25-11" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Add density for table$V1</span></span>
+<span id="cb25-12"><a href="#cb25-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> density_table, <span class="fu">aes</span>(<span class="at">x =</span> x, <span class="at">y =</span> y), <span class="at">color =</span> <span class="st">"black"</span>, <span class="at">size =</span> <span class="fl">1.5</span>) <span class="sc">+</span></span>
+<span id="cb25-13"><a href="#cb25-13" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb25-14"><a href="#cb25-14" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Add density for sel$V1 (red line)</span></span>
+<span id="cb25-15"><a href="#cb25-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> density_sel, <span class="fu">aes</span>(<span class="at">x =</span> x, <span class="at">y =</span> y), <span class="at">color =</span> <span class="st">"red"</span>, <span class="at">size =</span> <span class="fl">1.5</span>) <span class="sc">+</span></span>
+<span id="cb25-16"><a href="#cb25-16" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb25-17"><a href="#cb25-17" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Add density for back$V1 (blue line)</span></span>
+<span id="cb25-18"><a href="#cb25-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> density_back, <span class="fu">aes</span>(<span class="at">x =</span> x, <span class="at">y =</span> y), <span class="at">color =</span> <span class="st">"blue"</span>, <span class="at">size =</span> <span class="fl">1.5</span>) <span class="sc">+</span></span>
+<span id="cb25-19"><a href="#cb25-19" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb25-20"><a href="#cb25-20" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Add vertical lines at x = 0.2 and x = 0.35</span></span>
+<span id="cb25-21"><a href="#cb25-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_vline</span>(<span class="at">xintercept =</span> <span class="fl">0.2</span>, <span class="at">linetype =</span> <span class="st">"dotted"</span>, <span class="at">size =</span> <span class="fl">1.5</span>, <span class="at">color =</span> <span class="st">"blue"</span>) <span class="sc">+</span></span>
+<span id="cb25-22"><a href="#cb25-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_vline</span>(<span class="at">xintercept =</span> <span class="fl">0.35</span>, <span class="at">linetype =</span> <span class="st">"dotted"</span>, <span class="at">size =</span> <span class="fl">1.5</span>, <span class="at">color =</span> <span class="st">"red"</span>) <span class="sc">+</span></span>
+<span id="cb25-23"><a href="#cb25-23" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb25-24"><a href="#cb25-24" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Add labels and limits</span></span>
+<span id="cb25-25"><a href="#cb25-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">""</span>, <span class="at">x =</span> <span class="st">"Fst"</span>, <span class="at">y =</span> <span class="st">"Density"</span>) <span class="sc">+</span></span>
+<span id="cb25-26"><a href="#cb25-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">xlim</span>(<span class="sc">-</span><span class="fl">0.05</span>, <span class="fl">0.8</span>) <span class="sc">+</span></span>
+<span id="cb25-27"><a href="#cb25-27" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb25-28"><a href="#cb25-28" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Minimal theme for a clean look</span></span>
+<span id="cb25-29"><a href="#cb25-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+ℹ Please use `linewidth` instead.</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Parameters for the model</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>data <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">Population =</span> <span class="fu">c</span>(<span class="st">"Ancestral1"</span>, <span class="st">"Ancestral2"</span>,<span class="st">"Ancestral3"</span>,<span class="st">"urban"</span>, <span class="st">"non-urban"</span>),</span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">Size =</span> <span class="fu">log10</span>(<span class="fu">c</span>(<span class="dv">207976</span><span class="sc">/</span><span class="dv">2</span>,<span class="dv">61542</span><span class="sc">/</span><span class="dv">2</span>,<span class="dv">635816</span><span class="sc">/</span><span class="dv">2</span>, <span class="dv">156</span><span class="sc">/</span><span class="dv">2</span>, <span class="dv">19664</span><span class="sc">/</span><span class="dv">2</span>)),    <span class="co"># Effective population sizes</span></span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">Start_Time =</span> <span class="fu">log10</span>(<span class="fu">c</span>(<span class="dv">1000000</span>,<span class="dv">106177</span>,<span class="dv">50784</span>, <span class="dv">32</span>, <span class="dv">32</span>)),     <span class="co"># Start time of the population (e.g., divergence time)</span></span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">End_Time =</span> <span class="fu">log10</span>(<span class="fu">c</span>(<span class="dv">106177</span>,<span class="dv">50784</span>,<span class="dv">32</span>, <span class="dv">1</span>, <span class="dv">1</span>))     <span class="co"># End time of the population</span></span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb27-8"><a href="#cb27-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-9"><a href="#cb27-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Plot the population size rectangles</span></span>
+<span id="cb27-10"><a href="#cb27-10" aria-hidden="true" tabindex="-1"></a>Demography<span class="ot">=</span><span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb27-11"><a href="#cb27-11" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Ancestral population as a rectangle</span></span>
+<span id="cb27-12"><a href="#cb27-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_rect</span>(<span class="fu">aes</span>(<span class="at">xmin =</span><span class="sc">-</span>data<span class="sc">$</span>Size[<span class="dv">1</span>], <span class="at">xmax =</span> data<span class="sc">$</span>Size[<span class="dv">1</span>], <span class="at">ymin =</span> data<span class="sc">$</span>Start_Time[<span class="dv">1</span>], <span class="at">ymax =</span> data<span class="sc">$</span>End_Time[<span class="dv">1</span>]), </span>
+<span id="cb27-13"><a href="#cb27-13" aria-hidden="true" tabindex="-1"></a>            <span class="at">fill =</span> <span class="st">"lightblue"</span>, <span class="at">alpha =</span> <span class="fl">0.5</span>, <span class="at">color =</span> <span class="st">"black"</span>) <span class="sc">+</span></span>
+<span id="cb27-14"><a href="#cb27-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">x =</span> <span class="dv">0</span>, <span class="at">y =</span> (data<span class="sc">$</span>Start_Time[<span class="dv">1</span>]<span class="sc">+</span>data<span class="sc">$</span>Start_Time[<span class="dv">2</span>])<span class="sc">/</span><span class="dv">2</span>, <span class="at">label =</span> <span class="st">"N=103,988"</span>), <span class="at">size =</span> <span class="dv">5</span>) <span class="sc">+</span></span>
+<span id="cb27-15"><a href="#cb27-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_rect</span>(<span class="fu">aes</span>(<span class="at">xmin =</span> <span class="sc">-</span>data<span class="sc">$</span>Size[<span class="dv">2</span>], <span class="at">xmax =</span> data<span class="sc">$</span>Size[<span class="dv">2</span>], <span class="at">ymin =</span> data<span class="sc">$</span>Start_Time[<span class="dv">2</span>], <span class="at">ymax =</span> data<span class="sc">$</span>End_Time[<span class="dv">2</span>]), </span>
+<span id="cb27-16"><a href="#cb27-16" aria-hidden="true" tabindex="-1"></a>            <span class="at">fill =</span> <span class="st">"lightblue"</span>, <span class="at">alpha =</span> <span class="fl">0.5</span>, <span class="at">color =</span> <span class="st">"black"</span>) <span class="sc">+</span></span>
+<span id="cb27-17"><a href="#cb27-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">x =</span> <span class="dv">0</span>, <span class="at">y =</span> (data<span class="sc">$</span>Start_Time[<span class="dv">2</span>]<span class="sc">+</span>data<span class="sc">$</span>Start_Time[<span class="dv">3</span>])<span class="sc">/</span><span class="dv">2</span>, <span class="at">label =</span> <span class="st">"N=30,771"</span>), <span class="at">size =</span> <span class="dv">5</span>) <span class="sc">+</span></span>
+<span id="cb27-18"><a href="#cb27-18" aria-hidden="true" tabindex="-1"></a> <span class="fu">geom_rect</span>(<span class="fu">aes</span>(<span class="at">xmin =</span> <span class="sc">-</span>data<span class="sc">$</span>Size[<span class="dv">3</span>], <span class="at">xmax =</span> data<span class="sc">$</span>Size[<span class="dv">3</span>], <span class="at">ymin =</span> data<span class="sc">$</span>Start_Time[<span class="dv">3</span>], <span class="at">ymax =</span> data<span class="sc">$</span>End_Time[<span class="dv">3</span>]), </span>
+<span id="cb27-19"><a href="#cb27-19" aria-hidden="true" tabindex="-1"></a>            <span class="at">fill =</span> <span class="st">"lightblue"</span>, <span class="at">alpha =</span> <span class="fl">0.5</span>, <span class="at">color =</span> <span class="st">"black"</span>) <span class="sc">+</span></span>
+<span id="cb27-20"><a href="#cb27-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">x =</span> <span class="dv">0</span>, <span class="at">y =</span> (data<span class="sc">$</span>Start_Time[<span class="dv">3</span>]<span class="sc">+</span>data<span class="sc">$</span>Start_Time[<span class="dv">4</span>])<span class="sc">/</span><span class="dv">2</span>, <span class="at">label =</span> <span class="st">"N=317,908"</span>), <span class="at">size =</span> <span class="dv">5</span>) <span class="sc">+</span></span>
+<span id="cb27-21"><a href="#cb27-21" aria-hidden="true" tabindex="-1"></a> </span>
+<span id="cb27-22"><a href="#cb27-22" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Pop1 as a rectangle</span></span>
+<span id="cb27-23"><a href="#cb27-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_rect</span>(<span class="fu">aes</span>(<span class="at">xmin =</span><span class="sc">-</span><span class="dv">3</span><span class="sc">-</span>data<span class="sc">$</span>Size[<span class="dv">4</span>], <span class="at">xmax =</span> <span class="sc">-</span><span class="dv">3</span>, <span class="at">ymin =</span> data<span class="sc">$</span>Start_Time[<span class="dv">4</span>], <span class="at">ymax =</span> data<span class="sc">$</span>End_Time[<span class="dv">4</span>]), </span>
+<span id="cb27-24"><a href="#cb27-24" aria-hidden="true" tabindex="-1"></a>            <span class="at">fill =</span> <span class="st">"#C77CFF"</span>, <span class="at">alpha =</span> <span class="fl">0.5</span>, <span class="at">color =</span> <span class="st">"black"</span>) <span class="sc">+</span></span>
+<span id="cb27-25"><a href="#cb27-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">x =</span> <span class="sc">-</span><span class="dv">3</span><span class="sc">-</span>data<span class="sc">$</span>Size[<span class="dv">4</span>]<span class="sc">/</span><span class="dv">2</span>, <span class="at">y =</span> <span class="dv">1</span>, <span class="at">label =</span> <span class="st">"urban, N=78"</span>), <span class="at">size =</span> <span class="dv">5</span>) <span class="sc">+</span></span>
+<span id="cb27-26"><a href="#cb27-26" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb27-27"><a href="#cb27-27" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Pop2 as a rectangle</span></span>
+<span id="cb27-28"><a href="#cb27-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_rect</span>(<span class="fu">aes</span>(<span class="at">xmin =</span> <span class="dv">1</span>, <span class="at">xmax =</span> <span class="dv">1</span><span class="sc">+</span>data<span class="sc">$</span>Size[<span class="dv">5</span>], <span class="at">ymin =</span> data<span class="sc">$</span>Start_Time[<span class="dv">5</span>], <span class="at">ymax =</span> data<span class="sc">$</span>End_Time[<span class="dv">5</span>]), </span>
+<span id="cb27-29"><a href="#cb27-29" aria-hidden="true" tabindex="-1"></a>            <span class="at">fill =</span> <span class="st">"#619CFF"</span>, <span class="at">alpha =</span> <span class="fl">0.5</span>, <span class="at">color =</span> <span class="st">"black"</span>) <span class="sc">+</span></span>
+<span id="cb27-30"><a href="#cb27-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">x =</span>  <span class="dv">1</span><span class="sc">+</span>data<span class="sc">$</span>Size[<span class="dv">5</span>]<span class="sc">/</span><span class="dv">2</span>, <span class="at">y =</span><span class="dv">1</span>, <span class="at">label =</span> <span class="st">"non-urban, N=9,832"</span>), <span class="at">size =</span> <span class="dv">5</span>) <span class="sc">+</span></span>
+<span id="cb27-31"><a href="#cb27-31" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb27-32"><a href="#cb27-32" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Add arrows for gene flow</span></span>
+<span id="cb27-33"><a href="#cb27-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_curve</span>(<span class="fu">aes</span>(<span class="at">x =</span> <span class="sc">-</span><span class="dv">3</span>, <span class="at">y =</span> <span class="fu">log10</span>(<span class="dv">2</span>), <span class="at">xend =</span> <span class="dv">1</span>, <span class="at">yend =</span> <span class="fu">log10</span>(<span class="dv">2</span>)), </span>
+<span id="cb27-34"><a href="#cb27-34" aria-hidden="true" tabindex="-1"></a>             <span class="at">curvature =</span> <span class="fl">0.2</span>, <span class="at">arrow =</span> <span class="fu">arrow</span>(<span class="at">length =</span> <span class="fu">unit</span>(<span class="fl">0.3</span>, <span class="st">"cm"</span>)), </span>
+<span id="cb27-35"><a href="#cb27-35" aria-hidden="true" tabindex="-1"></a>             <span class="at">color =</span> <span class="st">"darkgrey"</span>, <span class="at">size =</span> <span class="fl">1.5</span>) <span class="sc">+</span></span>
+<span id="cb27-36"><a href="#cb27-36" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">x =</span> <span class="sc">-</span><span class="dv">1</span>, <span class="at">y =</span>  <span class="fu">log10</span>(<span class="dv">2</span>), <span class="at">label =</span> <span class="st">"1.7e-04 (urban to non-urban)"</span>), <span class="at">color =</span> <span class="st">"black"</span>, <span class="at">size =</span> <span class="dv">4</span>) <span class="sc">+</span></span>
+<span id="cb27-37"><a href="#cb27-37" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb27-38"><a href="#cb27-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_curve</span>(<span class="fu">aes</span>(<span class="at">x =</span> <span class="dv">1</span>, <span class="at">y =</span> <span class="fu">log10</span>(<span class="dv">5</span>), <span class="at">xend =</span> <span class="sc">-</span><span class="dv">3</span>, <span class="at">yend =</span> <span class="fu">log10</span>(<span class="dv">5</span>)), </span>
+<span id="cb27-39"><a href="#cb27-39" aria-hidden="true" tabindex="-1"></a>             <span class="at">curvature =</span> <span class="sc">-</span><span class="fl">0.2</span>, <span class="at">arrow =</span> <span class="fu">arrow</span>(<span class="at">length =</span> <span class="fu">unit</span>(<span class="fl">0.3</span>, <span class="st">"cm"</span>)), </span>
+<span id="cb27-40"><a href="#cb27-40" aria-hidden="true" tabindex="-1"></a>             <span class="at">color =</span> <span class="st">"lightgrey"</span>, <span class="at">size =</span> <span class="fl">1.5</span>) <span class="sc">+</span></span>
+<span id="cb27-41"><a href="#cb27-41" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">x =</span> <span class="sc">-</span><span class="dv">1</span>, <span class="at">y =</span>  <span class="fu">log10</span>(<span class="dv">20</span>), <span class="at">label =</span> <span class="st">"0.056 (non-urban to urban)"</span>), <span class="at">color =</span> <span class="st">"black"</span>, <span class="at">size =</span> <span class="dv">4</span>) <span class="sc">+</span></span>
+<span id="cb27-42"><a href="#cb27-42" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb27-43"><a href="#cb27-43" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Formatting the plot</span></span>
+<span id="cb27-44"><a href="#cb27-44" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_y_reverse</span>() <span class="sc">+</span>  <span class="co"># Reverse the y-axis to show time going downward</span></span>
+<span id="cb27-45"><a href="#cb27-45" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">""</span>, </span>
+<span id="cb27-46"><a href="#cb27-46" aria-hidden="true" tabindex="-1"></a>       <span class="at">x =</span> <span class="st">"Population"</span>, <span class="at">y =</span> <span class="st">"Time (log10(Generations))"</span>) <span class="sc">+</span></span>
+<span id="cb27-47"><a href="#cb27-47" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>() <span class="sc">+</span></span>
+<span id="cb27-48"><a href="#cb27-48" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">axis.text.x =</span> <span class="fu">element_blank</span>(), <span class="at">axis.ticks.x =</span> <span class="fu">element_blank</span>())</span>
+<span id="cb27-49"><a href="#cb27-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-50"><a href="#cb27-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-51"><a href="#cb27-51" aria-hidden="true" tabindex="-1"></a><span class="do">###Figure for publication</span></span>
+<span id="cb27-52"><a href="#cb27-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-53"><a href="#cb27-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-54"><a href="#cb27-54" aria-hidden="true" tabindex="-1"></a><span class="fu">ggarrange</span>(Demography, Simulations, </span>
+<span id="cb27-55"><a href="#cb27-55" aria-hidden="true" tabindex="-1"></a>          <span class="at">labels =</span> <span class="fu">c</span>(<span class="st">"A"</span>, <span class="st">"B"</span>),<span class="at">font.label =</span> <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">28</span>, <span class="at">color =</span> <span class="st">"black"</span>, <span class="at">face =</span> <span class="st">"bold"</span>),<span class="at">ncol =</span> <span class="dv">2</span>, <span class="at">nrow =</span> <span class="dv">1</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: Removed 16 rows containing missing values or values outside the scale range
+(`geom_line()`).</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: Removed 40 rows containing missing values or values outside the scale range
+(`geom_line()`).</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: Removed 34 rows containing missing values or values outside the scale range
+(`geom_line()`).</code></pre>
+</div>
+<div class="cell-output-display">
+<p><img src="scripts_demography_files/figure-html/unnamed-chunk-10-1.png" class="img-fluid" width="672"></p>
+</div>
+<div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(POPdemog) <span class="do">###Very useful to plot the scenario</span></span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb31-3"><a href="#cb31-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb31-4"><a href="#cb31-4" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow=</span><span class="fu">c</span>(<span class="dv">1</span>,<span class="dv">2</span>))</span>
+<span id="cb31-5"><a href="#cb31-5" aria-hidden="true" tabindex="-1"></a><span class="fu">PlotMS</span>(<span class="at">input.cmd =</span> <span class="st">"ms 88 1 -t 0.02635 -I 2 64 24 -m 1 2 0.0527 -m 2 1 17.482977 -en 0 2 126.858064516129 -ej 0.103225806451613 1 2 -en 0.103225806451613 2 4102.03870967742 -en 163.81935483871 2 397.045161290323 -en 342.506451612903 2 1341.78064516129"</span>,<span class="at">type=</span><span class="st">"ms"</span>,<span class="at">time.scale=</span><span class="st">"log10year"</span>,<span class="at">size.scale=</span><span class="st">"linear"</span>,<span class="at">N4=</span><span class="dv">310</span>,<span class="at">gen=</span><span class="dv">1</span>,<span class="at">col.pop=</span><span class="fu">c</span>(<span class="st">"#C77CFF"</span>,<span class="st">"#619CFF"</span>),<span class="at">pops=</span><span class="fu">c</span>(<span class="st">"Urban"</span>, <span class="st">"Non-urban"</span>),<span class="at">cex.lab =</span><span class="fl">1.3</span>, <span class="at">cex.axis =</span> <span class="fl">1.3</span>,<span class="at">lwd.arrow =</span> <span class="dv">3</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>There are  4 time events for  2  populations</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>read N and g, done!</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>read m, done!</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>read pos and update, done!</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>demographic initiation, done!</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>plot initiation, done!</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb38"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="fu">NRuler</span>(<span class="st">"top"</span>, <span class="at">Nsize=</span><span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">16e5</span>), <span class="at">Nlab=</span><span class="fu">c</span>(<span class="st">""</span>,<span class="st">"4e5"</span>), <span class="at">N4=</span><span class="dv">310</span>, <span class="at">size.scale=</span><span class="st">"linear"</span>, <span class="at">lwd=</span><span class="dv">1</span>, <span class="at">cex=</span><span class="fl">1.1</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning in NRuler("top", Nsize = c(0, 1600000), Nlab = c("", "4e5"), N4 = 310,
+: linear.scale is in the default value: 0.2</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb40"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(<span class="fu">density</span>(PBS<span class="sc">$</span>Fst12,<span class="at">bw=</span><span class="fl">0.018</span>),<span class="at">type=</span><span class="st">"l"</span>,<span class="at">col=</span><span class="st">"darkgrey"</span>,<span class="at">lwd=</span><span class="dv">2</span>,<span class="at">lty=</span><span class="dv">2</span>,<span class="at">main=</span><span class="st">""</span>,<span class="at">xlab=</span><span class="fu">expression</span>(<span class="fu">italic</span>(F[ST])),<span class="at">xlim=</span><span class="fu">c</span>(<span class="dv">0</span>,<span class="fl">0.8</span>),<span class="at">cex=</span><span class="fl">1.3</span>)</span>
+<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(<span class="fu">density</span>(table<span class="sc">$</span>V1,<span class="at">bw=</span><span class="fl">0.01</span>),<span class="at">xlim=</span><span class="fu">c</span>(<span class="dv">0</span>,<span class="dv">1</span>),<span class="at">lwd=</span><span class="dv">2</span>,<span class="at">type=</span><span class="st">"l"</span>)</span>
+<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(<span class="fu">density</span>(sel<span class="sc">$</span>V1),<span class="at">type=</span><span class="st">"l"</span>,<span class="at">col=</span><span class="st">"red"</span>,<span class="at">lwd=</span><span class="dv">2</span>)</span>
+<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a><span class="fu">points</span>(<span class="fu">density</span>(back<span class="sc">$</span>V1),<span class="at">type=</span><span class="st">"l"</span>,<span class="at">col=</span><span class="st">"blue"</span>,<span class="at">lwd=</span><span class="dv">2</span>)</span>
+<span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v=</span><span class="fl">0.2</span>,<span class="at">lty=</span><span class="dv">3</span>,<span class="at">lwd=</span><span class="dv">2</span>,<span class="at">col=</span><span class="st">"blue"</span>)</span>
+<span id="cb40-6"><a href="#cb40-6" aria-hidden="true" tabindex="-1"></a><span class="fu">abline</span>(<span class="at">v=</span><span class="fl">0.35</span>,<span class="at">lty=</span><span class="dv">3</span>,<span class="at">lwd=</span><span class="dv">2</span>,<span class="at">col=</span><span class="st">"red"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output-display">
+<p><img src="scripts_demography_files/figure-html/unnamed-chunk-10-2.png" class="img-fluid" width="672"></p>
+</div>
+</div>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    target: function(trigger) {
+      return trigger.previousElementSibling;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  function tippyHover(el, contentFn) {
+    const config = {
+      allowHTML: true,
+      content: contentFn,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start'
+    };
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+</body></html>

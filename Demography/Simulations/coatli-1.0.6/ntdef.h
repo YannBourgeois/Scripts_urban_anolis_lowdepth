@@ -1,0 +1,16 @@
+#define DEFAULT_PRECISION 4
+#define ANY 0
+#define NESTED 1
+#define DISJOINT 2
+#define NESTED_NESTED 3
+#define NESTED_DISJOINT 4
+#define DISJOINT_NESTED 5
+#define DISJOINT_DISJOINT 6
+#define ENCLOSING 7
+#define COOCCURRING 8
+#define STRICTLY_NESTED 9
+#define COMPLEMENTARY 10
+#define STRICTLY_DISJOINT 11
+#define LINEAR 1
+#define QUADRATIC 2
+#define CUBIC 3

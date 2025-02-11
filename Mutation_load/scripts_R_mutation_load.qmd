@@ -1,0 +1,232 @@
+---
+title: "Mutation_load"
+format: html
+editor: visual
+---
+
+## Examining spectra and mutation load
+
+We now look at Rxy, which allows us to directly compare the two populations and may be more efficient at direct comparisons. We project spectra down (with dadi) to alleviate the issue of missing data. See also https://github.com/samarth8392/MQU_EvoGenomics
+
+```{bash}
+#| eval: false
+
+for input_file in Spectra/*ml
+#for input_file in Spectra/Bootstraps_no_block/*ml  #no block bootstrap.
+do
+echo "37 99 unfolded" | cat - "$input_file" > temp && mv temp "$input_file"
+done
+
+
+```
+
+```{r}
+library(reticulate)
+use_python("/home/yannbourgeois/mambaforge/bin/python3")
+
+```
+
+We applied a threshold for missing individuals of 32/49 (urban) and 12/18 (countryside). So we can project to 64 and 24. We can also project down even more to provide a clearer contrast for the SFS.
+
+```{python}
+
+import dadi
+import glob
+import os
+
+# Directory containing the files
+directory = 'Spectra'
+#directory = 'Spectra/Bootstraps_no_block'
+
+# Loop over all files in the directory that match a pattern (e.g., all .txt files)
+for file_path in glob.glob(os.path.join(directory, '*ml')):
+    if os.path.isfile(file_path):
+        print(f"Processing file: {os.path.basename(file_path)}")
+        # Add your code here to process the file
+        fs = dadi.Spectrum.from_file(file_path) ###ml file but with a dadi header
+        fs2=fs.project([10,10])
+        #fs2=fs.fold()
+        fs3=fs.project([24,64])
+        #fs2.to_file("folded_spectrum.sfs")
+        fs3.to_file(f"projected_{os.path.basename(file_path)}")
+        fs2.to_file(f"projected_small_{os.path.basename(file_path)}")
+
+
+import matplotlib.pyplot as plt
+
+dadi.Plotting.plot_single_2d_sfs(fs3,vmin=1)
+plt.show()
+
+#plt.savefig("proj.jpg") #save as jpg
+
+
+
+```
+
+```{bash}
+for input_file in projected*ml
+do
+sed 1d $input_file | sed 2d > temp && mv temp $input_file
+done
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+
+proj_a=65
+proj_b=25
+spectrum_2D_base=matrix(as.numeric(read.table("projected_country_urban_INTERGENIC.ml")),proj_a,proj_b) ##Replace with whole genome
+spectrum_2D_low=matrix(as.numeric(read.table("projected_country_urban_LOW.ml")),proj_a,proj_b) ##should be a 33 x 111 matrix
+spectrum_2D_medium=matrix(as.numeric(read.table("projected_country_urban_MEDIUM.ml")),proj_a,proj_b)
+spectrum_2D_high=matrix(as.numeric(read.table("projected_country_urban_HIGH.ml")),proj_a,proj_b)
+
+
+
+proj_a=11
+proj_b=11
+spectrum_2D_base_small=matrix(as.numeric(read.table("projected_small_country_urban_INTERGENIC.ml")),proj_a,proj_b) ##Replace with whole genome
+spectrum_2D_low_small=matrix(as.numeric(read.table("projected_small_country_urban_LOW.ml")),proj_a,proj_b) ##should be a 33 x 111 matrix
+spectrum_2D_medium_small=matrix(as.numeric(read.table("projected_small_country_urban_MEDIUM.ml")),proj_a,proj_b)
+spectrum_2D_high_small=matrix(as.numeric(read.table("projected_small_country_urban_HIGH.ml")),proj_a,proj_b)
+
+
+proj_a=65
+proj_b=25
+###Function to compute Rxy (not yet scaled by intergenic variants)
+
+Rxy=function(matrix_counts){
+
+Rx=matrix(0,proj_a,proj_b)
+Ry=matrix(0,proj_a,proj_b)
+###Compute Rxy.
+counts=matrix_counts
+for (i in 1:proj_a){
+  for (j in 1:proj_b){
+    Rx[i,j]=counts[i,j]*((i-1)/(proj_a-1))*((proj_b-j)/(proj_b-1))
+    Ry[i,j]=counts[i,j]*((j-1)/(proj_b-1))*((proj_a-i)/(proj_a-1))
+  }
+}
+Rxy=sum(Rx)/sum(Ry)
+#print(Rxy_low)
+}
+
+heatmap(spectrum_2D_base, Rowv = NA, Colv = NA)
+par(mfrow=c(1,2))
+heatmap(spectrum_2D_high_small, Rowv = NA, Colv = NA)
+heatmap(spectrum_2D_low_small, Rowv = NA, Colv = NA)
+
+##Rxy(spectrum_2D_base)
+Rxy_base=Rxy(spectrum_2D_base)
+Rxy_low=Rxy(spectrum_2D_low)
+Rxy_medium=Rxy(spectrum_2D_medium)
+Rxy_high=Rxy(spectrum_2D_high)
+  
+for (boot in 1:100){
+  boot_2D_low=Rxy(matrix(as.numeric(read.table(paste("projected_country_urban_LOW_boot_",boot,".ml",sep=""))),proj_a,proj_b))
+  boot_2D_medium=Rxy(matrix(as.numeric(read.table(paste("projected_country_urban_MEDIUM_boot_",boot,".ml",sep=""))),proj_a,proj_b))
+  boot_2D_high=Rxy(matrix(as.numeric(read.table(paste("projected_country_urban_HIGH_boot_",boot,".ml",sep=""))),proj_a,proj_b))
+  Rxy_low=c(Rxy_low,boot_2D_low)
+  Rxy_medium=c(Rxy_medium,boot_2D_medium)
+  Rxy_high=c(Rxy_high,boot_2D_high)
+}
+
+
+
+table=as.data.frame(c(Rxy_low/Rxy_base,Rxy_medium/Rxy_base,Rxy_high/Rxy_base))
+colnames(table)="Rxy"
+table$Effect=c(rep("LOW",101),rep("MEDIUM",101),rep("HIGH",101))
+desired_order <- c('LOW','MEDIUM','HIGH')
+
+table$Effect <- factor(table$Effect, levels = desired_order)
+
+
+ggplot(table, aes(x = Effect, y = Rxy, fill = Effect)) +
+  geom_boxplot() +
+  labs(title = "Boxplots of Rxy",
+       x = "Effect",
+       y = "Rxy",
+       fill = "Effect") + theme_minimal()
+
+
+
+proj_a=11
+proj_b=11
+###Plotting 1D SFS for each category
+base_countryside=colSums(spectrum_2D_base_small)[2:(proj_b-1)]
+low_countryside=colSums(spectrum_2D_low_small)[2:(proj_b-1)]
+medium_countryside=colSums(spectrum_2D_medium_small)[2:(proj_b-1)]
+high_countryside=colSums(spectrum_2D_high_small)[2:(proj_b-1)]
+
+base_urban=rowSums(spectrum_2D_base_small)[2:(proj_a-1)]
+low_urban=rowSums(spectrum_2D_low_small)[2:(proj_a-1)]
+medium_urban=rowSums(spectrum_2D_medium_small)[2:(proj_a-1)]
+high_urban=rowSums(spectrum_2D_high_small)[2:(proj_a-1)]
+
+###Total number of variants for each category for urban
+h1=sum(rowSums(spectrum_2D_high_small)[2:(proj_a)]*seq(1:10))
+m1=sum(rowSums(spectrum_2D_medium_small)[2:(proj_a)]*seq(1:10))
+l1=sum(rowSums(spectrum_2D_low_small)[2:(proj_a)]*seq(1:10))
+i1=sum(rowSums(spectrum_2D_base_small)[2:(proj_a)]*seq(1:10))
+
+###Same but for non-urban
+h2=sum(colSums(spectrum_2D_high_small)[2:(proj_b)]*seq(1:10))
+m2=sum(colSums(spectrum_2D_medium_small)[2:(proj_b)]*seq(1:10))
+l2=sum(colSums(spectrum_2D_low_small)[2:(proj_b)]*seq(1:10))
+i2=sum(colSums(spectrum_2D_base_small)[2:(proj_b)]*seq(1:10))
+
+h1/h2
+m1/m2
+l1/l2
+i1/i2
+
+###Confirms loss of absolute number of deleterious alternate/derived alleles not found in the reference genome in urban.
+
+Frequency=c(base_countryside,low_countryside,medium_countryside,high_countryside,base_urban,low_urban,medium_urban,high_urban)
+Allele_count=c(rep(1:(proj_b-2),4),rep(1:(proj_a-2),4))
+Effect=c(rep("INTERGENIC",proj_b-2),rep("LOW",proj_b-2),rep("MEDIUM",proj_b-2),rep("HIGH",proj_b-2),rep("INTERGENIC",proj_a-2),rep("LOW",proj_a-2),rep("MEDIUM",proj_a-2),rep("HIGH",proj_a-2))
+
+combined=as.data.frame(cbind(Allele_count,Frequency,Effect))
+combined$Population=c(rep("non-urban",4*(proj_b-2)),rep("urban",4*(proj_a-2)))
+combined$Frequency=as.numeric(combined$Frequency)
+combined$Allele_count=as.numeric(combined$Allele_count)
+
+# Assuming your data is in a dataframe named df
+combined <- combined %>%
+  group_by(Effect, Population) %>%
+  mutate(Frequency = Frequency / sum(Frequency)) %>%
+  ungroup()
+
+desired_order <- c('INTERGENIC','LOW','MEDIUM','HIGH')
+
+combined$Effect <- factor(combined$Effect, levels = desired_order)
+
+
+###Maybe combine plots? command below.
+B=ggplot(table, aes(x = Effect, y = Rxy, fill = Effect)) +
+  geom_boxplot() +
+  labs(title = "",
+       x = "Effect",
+       y = expression(R[x][y]),
+       fill = "Effect") + theme_minimal()  +
+  scale_fill_manual(values = c("#F8766D","#7CAE00","#00BFC4"))+
+  theme(legend.position = "none")
+
+
+A=ggplot(combined, aes(x = Allele_count, y = Frequency, fill = Effect)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "",
+       x = "Allele Count",
+       y = "Frequency",
+       fill = "Effect") +
+  facet_wrap(~Population,ncol=1,scales="free_x") +
+  theme_minimal() +
+  scale_fill_manual(values = c("#C77CFF","#F8766D","#7CAE00","#00BFC4"))  # Reorder the default colors
+
+
+ggarrange(A, B, 
+          labels = c("A", "B"),font.label = list(size = 28, color = "black", face = "bold"),ncol = 2, nrow = 1)
+
+
+```

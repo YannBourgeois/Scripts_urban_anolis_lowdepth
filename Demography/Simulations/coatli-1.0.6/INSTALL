@@ -1,0 +1,18 @@
+Installation:
+
+If you download the tar ball, extract files by
+$tar -xzvf coatli-1.0.5.tar.gz
+
+and change directory
+$cd coatli-1.0.5
+
+Compile by
+$make
+
+And install (probably root permissions required) into /usr/local/bin by
+$make install
+
+In order to change the installation directory, edit the Makefile.
+
+$make clean
+removes the compiled files from the local directory.
