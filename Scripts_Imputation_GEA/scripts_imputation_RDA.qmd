@@ -1,0 +1,4000 @@
+---
+title: "STITCH and imputation-based analyses Anoles"
+author: "Yann Bourgeois"
+format: html
+editor: visual
+---
+
+## Using STITCH to obtain imputed genotypes from BAM and a list of positions.
+
+We can check how the imputation works by examining genotypes in the higher depth of coverage samples. Then it is a matter of looking at the confusion matrix (0/0 v 1/1)
+
+Installation:
+
+```{bash}
+
+module load r
+
+version=1.7.3
+wget -O STITCH.zip https://github.com/rwdavies/STITCH/archive/refs/tags/${version}.zip ## or curl
+unzip STITCH.zip && mv STITCH-${version} STITCH
+cd STITCH && ./scripts/install-dependencies.sh
+make install PREFIX=/shared/projects/natrix_genomics/analyses_anoles/local/STITCH
+
+##In Makefile for IFB --library=/shared/projects/natrix_genomics/Rlibs/ . Think to add it also to the STITCH.R script
+
+#--library=/mnt/lustre2/mres/Linum/local/STITCH
+```
+
+https://pmc.ncbi.nlm.nih.gov/articles/PMC11286293/
+
+Then, we need to test over different values of S, K, and nGen. Read a bit https://github.com/rwdavies/STITCH/issues/59
+
+I assume a long-term Ne of ca 50,000. Rough approximation based on the demographic trajectories. I remove shared/projects/popgen_reunion_harrier/44_S106_mdup.withrg.csorted.cleaned.aligned.bam and the high depth genomes from the bam list.\
+We previously used bcftools to generate a VCF file. We can therefore start from this to generate a list of positions to examine.
+
+Sample_AC8-8.srtd.bam has the highest depth (modal depth at 13X) among all individuals sampled in the New Orleans area, and will be used to evaluate the quality of imputation. We subsample it to a depth of roughly 2X, so sample on average one every 7 reads.
+
+```{bash}
+
+
+###The filtered vcf was generated as such:
+vcftools --gzvcf calling_${SLURM_ARRAY_TASK_ID}.vcf.gz --minQ 20 --max-missing 0.6 --mac 1 --remove-indels --recode --recode-INFO-all --out filtered_calling_${SLURM_ARRAY_TASK_ID}
+
+rm all_filtered.vcf 
+for i in {1..1000};do grep -v "#" filtered_calling_${i}.recode.vcf >> all_filtered.vcf;echo $i;done
+
+###Now we redivide by chromosome/scaffold:
+#!/bin/bash
+#SBATCH --mem=32GB
+#SBATCH --partition=fast
+#SBATCH --job-name=generate_input
+#SBATCH --time=24:00:00
+#SBATCH --output=generate_input.%J.out
+#SBATCH --error=generate_input.%J.err
+module load vcflib/1.0.3 
+module load vcftools
+module load r
+module load bcftools
+module load tabix
+
+for chr in $(bcftools query -f '%CHROM\n' all_filtered.vcf.gz | sort -u); do
+bcftools view -r "$chr" all_filtered.vcf.gz -Oz -o "${chr}.vcf.gz"
+tabix -p vcf "${chr}.vcf.gz"
+zcat ${chr}.vcf.gz | cut -f1,2,4,5 | grep -v "#" | grep -v "," > pos_${chr}.txt
+bcftools query -s Sample_AC8-8.srtd.bam -f '%CHROM\t%POS[\t%GT]\n' ${chr}.vcf.gz  > genotypes_${chr}.txt
+
+###The following masks triallelic sites.
+awk 'BEGIN {OFS="\t"} {
+    for (i=3; i<=NF; i++) {
+        if ($i == "0/0" || $i == "0|0") $i = 0;
+        else if ($i == "0/1" || $i == "1/0" || $i == "0|1" || $i == "1|0") $i = 1;
+        else if ($i == "1/1" || $i == "1|1") $i = 2;
+        else $i = "NA";  # Missing genotypes or uncalled sites
+    }
+    print
+}' genotypes_${chr}.txt > genotypes_highdepth_numeric_${chr}.txt
+
+awk 'NR==FNR {key[$1,$2]; next} ($1,$2) in key' pos_${chr}.txt genotypes_highdepth_numeric_${chr}.txt > matched_rows_${chr}.txt
+
+# header Sample_AC8-8.srtd.bam
+
+cut -f3 matched_rows_${chr}.txt | cat header - > genotypes_highdepth_numeric_${chr}.txt
+done
+
+
+
+
+
+
+for K in 4 8 16 24
+do
+for S in 1 2 5 10
+do
+mkdir ./imputation_${K}_${S}_$((100000 / K))
+done
+done
+
+
+
+####Generate a subsample BAM:
+gatk DownsampleSam \
+  -I Sample_AC8-8.srtd.bam \
+  -O /dev/stdout \
+  -P 0.15 \
+  --ACCURACY 0.0001 \
+| \
+gatk AddOrReplaceReadGroups \
+  -I /dev/stdin \
+  -O /dev/stdout \
+  -RGID Sample_AC8-8_sub \
+  -RGPL illumina \
+  -RGSM Sample_AC8-8_sub | \
+gatk SortSam \
+  -I /dev/stdin \
+  -O Sample_Ac8-8_sub.bam \
+  -SO coordinate \
+  --CREATE_INDEX true
+
+
+gatk AddOrReplaceReadGroups \
+  -I Sample_AC8-13.srtd.bam \
+  -O Sample_Ac8-13.RG.bam \
+  -RGID Sample_AC8-13 \
+  -RGPL illumina \
+  -RGSM Sample_AC8-13 
+  
+  
+  
+rm -f config_commands_imputation.txt
+for K in 4 8 16 24
+do
+for S in 1 2 5 10
+do
+echo /shared/projects/natrix_genomics/STITCH/STITCH.R --chr=chr6 --bamlist=list_bam_imputation.txt --posfile=pos_chr6.txt --genfile=genotypes_highdepth_numeric_chr6.txt --method=diploid --outputdir=./imputation_${K}_${S}_$((100000 / K)) --K=${K} --nGen=$((100000 / K)) --S ${S} --nCores=6  --regionStart=1 --regionEnd=5000000 --buffer=10000 >> config_commands_imputation.txt
+done
+done
+
+nl -w2 config_commands_imputation.txt > config_commands_imputation.txt2;mv config_commands_imputation.txt2 config_commands_imputation.txt
+
+
+ls *bam | grep -v AC | grep -v TX > list_bam_imputation.txt
+
+
+#!/bin/bash
+#SBATCH --mem=64GB
+#SBATCH --partition=fast
+#SBATCH --job-name=impute
+#SBATCH --time=24:00:00
+#SBATCH --array=1-16   # 192 jobs
+#SBATCH --cpus-per-task=6
+#SBATCH --output=impute.%J.out
+#SBATCH --error=impute.%J.err
+module load r
+
+config=config_commands_imputation.txt
+CMD=$(awk -F'\t' -v ArrayTaskID=$SLURM_ARRAY_TASK_ID '$1==ArrayTaskID {print $2}' $config)
+
+eval ${CMD}
+
+
+```
+
+-   **chr** What chromosome to run. Should match BAM header (the SM: field)
+
+-   **posfile** Where to find file with positions to run. File is tab separated with no header, one row per SNP, with col 1 = chromosome, col 2 = physical position (sorted from smallest to largest), col 3 = reference base, col 4 = alternate base. Bases are capitalized. STITCH only handles bi-allelic SNPs
+
+-   **K** Integer, how many founder / mosaic haplotypes to use
+
+-   **nGen** Estimated number of generations since founding. In uncertain, estimate using 4 \* Ne / K, where Ne is the effective population size
+
+-   **outputdir** What output directory to use / where output files go
+
+-   **bamlist** (one of bamlist or cramlist required) Path to file with BAM file locations. File is one row per entry, path to BAM files. BAM index files should exist in same directory as for each BAM, suffixed either .bam.bai or .bai
+
+-   **cramlist** (one of bamlist or cramlist required) Same as bamlist, but path is to CRAM locations. If used, requires reference variable to be set with path to fasta file
+
+-   **S** controls the number of sets of ancestral haplotypes used. For instances where imputation confirms well to the model, S should have limited effect. For instances where imputation results are more modest, for example wild populations, increasing S should improve overall accuracy, with an approximately linear effect on run time.
+
+-   **genfile** Path to gen file with high coverage results. Empty for no genfile. File has a header row with a name for each sample, matching what is found in the bam file. Each subject is then a tab seperated column, with 0 = hom ref, 1 = het, 2 = hom alt and NA indicating missing genotype, with rows corresponding to rows of the posfile. Note therefore this file has one more row than posfile which has no header
+
+We can examine the Pearson's r\^2 at the end of the run. We can also compare the genotypes ourselves. For example, this run seems to have behaved well and is fast (K=8, S=10, nGen=12500), with a quite stable r2 at 0.83-0.84 over the course of the run.
+
+So we look at the generated VCF. We can flag the positions with reasonable allele frequencies. First we go back to the original VCF, then we compute missingness and allele frequency in vcftools, we produce the genotype matrix for the individual of interest in the imputed VCF, so we can then compare it with the actual data.
+
+```{bash}
+
+module load vcftools
+module load bcftools
+
+##vcftools --gzvcf chr6.vcf.gz --counts --out chr6_counts_prefilter
+
+
+bcftools query -s new_sample -f '%CHROM\t%POS\t%EAF\t%INFO_SCORE[\t%DS]\n' imputation_8_10_12500/stitch.chr6.1.5000000.vcf.gz > genotypes_imputed.txt
+##We extract the estimated allele frequency, the INFOSCORE and the individual DOSAGE
+
+```
+
+We now have genotypes_imputed.txt, genotypes_highdepth_numeric.txt, and chr6_counts_prefilter.frq.count
+
+We import all that in R:
+
+```{r}
+library(data.table)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(caret)  # For confusionMatrix()
+library(ggplot2)
+library(reshape2)
+
+real=as.data.frame(fread("Imputation/genotypes_highdepth_numeric_chr6.txt"))
+imputed=as.data.frame(fread("Imputation/genotypes_imputed.txt"))
+
+colnames(imputed)=c("CHR","POS","EAF","INFO_SCORE","DOSAGE")
+df=cbind(imputed,head(real,n=nrow(imputed)))
+df=na.omit(df)
+
+
+df$true_genotype <- as.factor(df$new_sample)
+
+# Plot
+n_colors <- length(unique(df$true_genotype))
+palette <- scales::hue_pal()(n_colors)  # Or use RColorBrewer::brewer.pal(n, "Set3")
+
+ggplot(df, aes(x = DOSAGE, color = true_genotype, fill = true_genotype, group = new_sample)) +
+  geom_density(urban_PC1 = 0.4) +
+  theme_minimal() +
+  labs(x = "Dosage", y = "Density", title = "Dosage Distributions by Sample") +
+  theme(legend.position = "right")
+
+
+##Look at INFO score depending on dosage
+
+ggplot(df, aes(x = INFO_SCORE, y = DOSAGE, color = as.factor(true_genotype))) +
+  geom_point(urban_PC1 = 0.6, size = 2) +
+  theme_minimal() +
+  labs(
+    x = "INFO Score",
+    y = "Dosage",
+    color = "True Genotype",
+    title = "Dosage vs INFO Score Colored by True Genotype"
+  ) +
+  scale_color_brewer(palette = "Set1")  
+
+
+
+df$geno_imputed=ifelse(df$DOSAGE<0.5,0,1)
+df$geno_imputed=ifelse(df$DOSAGE>=1.5,2,df$geno_imputed)
+
+table(df$geno_imputed,df$true_genotype)
+
+# Function to compute confusion matrix as a data frame
+compute_conf_matrix_df <- function(dosage_col, genotype_col, individual) {
+  predicted <- df[[dosage_col]]  # Convert dosage to 0/1
+  actual <- df[[genotype_col]]  # True genotype
+  
+  # Compute confusion matrix
+  cm <- table(Predicted = predicted, Actual = actual)
+  
+  # Convert to data frame for plotting
+  cm_df <- as.data.frame(cm)
+  cm_df$Individual <- individual  # Add individual label
+  
+  return(cm_df)
+}
+
+# Compute matrices for each individual
+cm <- compute_conf_matrix_df("geno_imputed", "true_genotype", "AC8_8")
+
+# Plot the confusion matrix
+ggplot(cm, aes(x = Actual, y = Predicted, fill = 100*Freq/108334)) +
+  geom_tile() + 
+  geom_text(aes(label = round(100*Freq/108334,2)), color = "white", size = 6) +  # Add counts
+  scale_fill_gradient(low = "blue", high = "red") +  # Color scale
+  labs(title = "Confusion Matrix for Genotypic Dosage Prediction",
+       x = "Actual Genotype",
+       y = "Predicted Genotype") +
+  theme_minimal() + 
+
+
+
+###Now, what are the results if we filter on missing data and MAF?
+df_filter=subset(df,df$EAF >0.049 & df$EAF <0.951)
+
+ggplot(df_filter, aes(x = DOSAGE, color = true_genotype, fill = true_genotype, group = new_sample)) +
+  geom_density(urban_PC1 = 0.4) +
+  theme_minimal() +
+  labs(x = "Dosage", y = "Density", title = "Dosage Distributions by Sample") +
+  theme(legend.position = "right")
+
+# Function to compute confusion matrix as a data frame
+compute_conf_matrix_df <- function(dosage_col, genotype_col, individual) {
+  predicted <- df_filter[[dosage_col]]  # Convert dosage to 0/1
+  actual <- df_filter[[genotype_col]]  # True genotype
+  
+  # Compute confusion matrix
+  cm <- table(Predicted = predicted, Actual = actual)
+  
+  # Convert to data frame for plotting
+  cm_df <- as.data.frame(cm)
+  cm_df$Individual <- individual  # Add individual label
+  
+  return(cm_df)
+}
+
+
+# Compute matrices for each individual
+cm <- compute_conf_matrix_df("geno_imputed", "true_genotype", "AC8_8")
+
+# Plot the confusion matrix
+ggplot(cm, aes(x = Actual, y = Predicted, fill = Freq)) +
+  geom_tile() + 
+  geom_text(aes(label = Freq), color = "white", size = 6) +  # Add counts
+  scale_fill_gradient(low = "blue", high = "red") +  # Color scale
+  labs(title = "Confusion Matrix for Genotypic Dosage Prediction",
+       x = "Actual Genotype",
+       y = "Predicted Genotype") +
+  theme_minimal()
+
+
+
+
+```
+
+Imputation is clearly good enough! We will take the imputed output and use a MAF cut-off of 0.05 to filter out rare variants.
+
+We now generate the imputed VCF for all SNPs. imputation_8_10_12500, seems to provide the best results, and is fast.
+
+```{bash}
+
+rm -f config_commands_imputation_chr.txt
+
+output_script="config_commands_imputation_chr.txt"
+> "$output_script"  # clear or create the file
+
+window_size=5000000
+buffer=10000
+
+for file in pos_chr*.txt; do
+    chr=$(echo "$file" | sed 's/pos_\(.*\)\.txt/\1/')
+    max_pos=$(tail -n 1 "$file" | awk '{print $2}')
+
+    start=1
+    while [ "$start" -lt "$max_pos" ]; do
+        end=$((start + window_size - 1))
+        if [ "$end" -gt "$max_pos" ]; then
+            end="$max_pos"
+        fi
+
+        echo "/shared/projects/natrix_genomics/STITCH/STITCH.R --chr=${chr} --bamlist=list_bam_imputation.txt --posfile=pos_${chr}.txt --method=diploid --outputdir=./imputation_8_10_12500_${chr} --K=8 --nGen=12500 --S 10 --nCores=3 --regionStart=${start} --regionEnd=${end} --buffer=${buffer}" >> "$output_script"
+
+        start=$((end + 1))
+    done
+done
+
+
+
+nl -w2 config_commands_imputation_chr.txt > config_commands_imputation_chr.txt2;mv config_commands_imputation_chr.txt2 config_commands_imputation_chr.txt
+
+
+for file in pos_chr*.txt; do
+chr=$(echo "$file" | sed 's/pos_\(.*\)\.txt/\1/')
+mkdir ./imputation_8_10_12500_${chr} 
+done
+
+
+
+
+#!/bin/bash
+#SBATCH --mem=32GB
+#SBATCH --partition=fast
+#SBATCH --job-name=impute
+#SBATCH --time=24:00:00
+#SBATCH --array=1-586   # 192 jobs
+#SBATCH --cpus-per-task=3
+#SBATCH --output=impute.%J.out
+#SBATCH --error=impute.%J.err
+module load vcflib/1.0.3 
+module load vcftools
+module load r
+module load bcftools
+module load tabix
+
+config=config_commands_imputation_chr.txt
+CMD1=$(awk -F'\t' -v ArrayTaskID=$SLURM_ARRAY_TASK_ID '$1==ArrayTaskID {print $2}' $config)
+
+eval ${CMD1}
+
+```
+
+And then we can replace the genotypes depending on dosage.
+
+```{bash}
+#!/bin/bash
+#SBATCH --mem=64GB
+#SBATCH --partition=fast
+#SBATCH --job-name=final_files_imputed
+#SBATCH --time=24:00:00
+#SBATCH --output=final_files_imputed.%J.out
+#SBATCH --error=final_files_imputed.%J.err
+
+module load bcftools
+module load vcftools
+module load tabix
+module load gatk4
+
+for file in imputation_8_10_12500_*/*vcf.gz
+do
+basename="${file##*/}"           # Extracts "stitch.CP027624.1.vcf.gz"
+name="${basename#stitch.}"       # Removes "stitch."
+name="${name%.vcf.gz}"           # Removes ".vcf.gz"
+echo $name
+tabix -f -p vcf ${file}
+bcftools +setGT ${file} -- -t "./."  -n c:'0/1' | bcftools +setGT -- -t q -i 'FMT/DS<0.5' -n c:'0/0' | bcftools +setGT -- -t q -i 'FMT/DS>=1.5' -n c:'1/1' > imputed_${name}.vcf
+bcftools query -s new_sample -f '%CHROM\t%POS[\t%DS]\n' ${file} > genotypes_imputed_${name}.txt
+done
+cat genotypes_imputed_*.txt > genotypes_imputed_all.txt
+ls imputed_*.vcf > input_variant_files.list 
+
+
+for f in imputed_*.vcf; do
+  bcftools view --header-only "$f" | grep -v '^##contig' > tmp_header.txt
+  bcftools view "$f" | grep -v '^#' >> tmp_variants.txt
+  cat tmp_header.txt tmp_variants.txt | bgzip > cleaned_${f}
+  tabix -p vcf cleaned_${f}
+done
+
+bcftools concat -O z -o All_imputed.vcf.gz cleaned_*.vcf.gz
+```
+
+Now we can look at imputation quality for all sites in the genome:
+
+```{bash}
+module load bcftools
+module load vcftools
+
+rm -f genotypes_highdepth_numeric_all.txt
+for chr in {1..15}
+do
+vcftools --vcf  Lu${chr}_no_indels.recode.vcf --max-alleles 2 --mac 1 --counts --out Lu${chr}_counts
+bcftools query -s HighDepth_IOW2_8,HighDepth_5_1,HighDepth_12_6 -f '%CHROM\t%POS[\t%GT]\n' Lu${chr}_no_indels.recode.vcf > genotypes_true_${chr}.txt
+
+###The following masks heterozygous sites.
+awk 'BEGIN {OFS="\t"} {
+    for (i=3; i<=NF; i++) {
+        if ($i == "0/0" || $i == "0|0") $i = 0;
+        else if ($i == "0/1" || $i == "1/0" || $i == "0|1" || $i == "1|0") $i = "NA";
+        else if ($i == "1/1" || $i == "1|1") $i = 2;
+        else $i = "NA";  # Missing genotypes or uncalled sites
+    }
+    print
+}' genotypes_true_${chr}.txt >> genotypes_highdepth_numeric_all.txt
+done
+
+rm -f All_counts_prefilter.frq.count
+for file in Lu*_counts.frq.count
+do 
+sed -e "s/:/\t/g" ${file} | grep -v CHROM >> All_counts_prefilter.frq.count
+done
+
+```
+
+Now for the final check of imputation quality:
+
+```{r}
+
+library(data.table)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(caret)  # For confusionMatrix()
+library(ggplot2)
+library(reshape2)
+
+real=as.data.frame(fread("genotypes_highdepth_numeric_all.txt"))
+imputed=as.data.frame(fread("genotypes_imputed_all.txt"))
+metadata=as.data.frame(fread("All_counts_prefilter.frq.count"))
+colnames(metadata)=c("CHR","POS","N_ALLELES","N_CHR","REF","REF_COUNT","ALT","ALT_COUNT")
+colnames(real)=c("CHR","POS","L65","L30","L18")
+
+colnames(imputed)=c("CHR","POS","L65_DOSAGE","L30_DOSAGE","L18_DOSAGE")
+imputed=merge(imputed,real,by=c("CHR","POS"))
+df=merge(metadata,imputed,by=c("CHR","POS"))
+boxplot(df$L65_DOSAGE~df$L65)
+
+df$L65_imputed=ifelse(df$L65_DOSAGE>1,2,0)
+df$L30_imputed=ifelse(df$L30_DOSAGE>1,2,0)
+df$L18_imputed=ifelse(df$L18_DOSAGE>1,2,0)
+
+df_original=df
+
+
+# Function to compute confusion matrix as a data frame
+compute_conf_matrix_df <- function(dosage_col, genotype_col, individual) {
+  predicted <- df[[dosage_col]]  # Convert dosage to 0/1
+  actual <- df[[genotype_col]]  # True genotype
+  
+  # Compute confusion matrix
+  cm <- table(Predicted = predicted, Actual = actual)
+  
+  # Convert to data frame for plotting
+  cm_df <- as.data.frame(cm)
+  cm_df$Individual <- individual  # Add individual label
+  
+  return(cm_df)
+}
+
+# Compute matrices for each individual
+cm_L65 <- compute_conf_matrix_df("L65_imputed", "L65", "L65")
+cm_L30 <- compute_conf_matrix_df("L30_imputed", "L30", "L30")
+cm_L18 <- compute_conf_matrix_df("L18_imputed", "L18", "L18")
+
+# Combine all data frames
+cm_all <- rbind(cm_L65, cm_L30, cm_L18)
+
+# Plot the confusion matrices
+ggplot(cm_all, aes(x = Actual, y = Predicted, fill = Freq)) +
+  geom_tile() + 
+  geom_text(aes(label = Freq), color = "white", size = 6) +  # Add counts
+  facet_wrap(~Individual) +  # One panel per individual
+  scale_fill_gradient(low = "blue", high = "red") +  # Color scale
+  labs(title = "Confusion Matrix for Genotypic Dosage Prediction",
+       x = "Actual Genotype",
+       y = "Predicted Genotype") +
+  theme_minimal()
+
+
+
+###Now, what are the results if we filter on missing data and MAF?
+df=df_original
+df_filter=subset(df,df$N_CHR>77 & df$ALT_COUNT/df$N_CHR >0.049 & df$ALT_COUNT/df$N_CHR <0.951)
+df=df_filter
+##At least 40% covered in the preimputed dataset
+
+cm_L65 <- compute_conf_matrix_df("L65_imputed", "L65", "L65")
+cm_L30 <- compute_conf_matrix_df("L30_imputed", "L30", "L30")
+cm_L18 <- compute_conf_matrix_df("L18_imputed", "L18", "L18")
+
+# Combine all data frames
+cm_all <- rbind(cm_L65, cm_L30, cm_L18)
+
+# Plot the confusion matrices
+ggplot(cm_all, aes(x = Actual, y = Predicted, fill = Freq)) +
+  geom_tile() + 
+  geom_text(aes(label = Freq), color = "white", size = 6) +  # Add counts
+  facet_wrap(~Individual) +  # One panel per individual
+  scale_fill_gradient(low = "blue", high = "red") +  # Color scale
+  labs(title = "Confusion Matrix for Genotypic Dosage Prediction",
+       x = "Actual Genotype",
+       y = "Predicted Genotype") +
+  theme_minimal()
+
+
+```
+
+## Quick test of Fst differentiation near a differentiation peak
+
+```{bash}
+vcftools --gzvcf All_imputed.vcf.gz --chr chr4 --from-bp 121500000 --to-bp 123500000 --weir-fst-pop urban_list_vcf.txt --weir-fst-pop nonurban_list_vcf.txt --fst-window-size 50000 --fst-window-step 10000 --out test_fst_chr4
+```
+
+The peak is where it is supposed to be yaaay!
+
+## Preparing files for a FEEMS analysis
+
+We need a file with the local grid, a set of sample coordinates, and the envelope around the study area.
+
+First we prepare the input files with plink:
+
+```{bash}
+
+plink --vcf All_imputed.vcf.gz --maf 0.05 --geno 0 --make-bed --allow-extra-chr --double-id  --recode --out filtered
+
+plink --bfile filtered --allow-extra-chr --double-id  --recodeA --out filtered
+
+##thin every 50kb like for FEEMS
+plink --bfile filtered --bp-space 50000 --allow-extra-chr --make-bed --double-id --out filtered_small
+
+plink --bfile filtered --bp-space 50000 --allow-extra-chr --double-id  --recodeA --out filtered_small
+plink --bfile filtered --bp-space 50000 --allow-extra-chr --double-id --recode --tab --out filtered_small
+
+```
+
+```{r}
+
+
+library(dggridR)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(dplyr)
+
+library(dggridR)
+
+filename <- dgearthgrid(dgconstruct(res=10, projection = "ISEA", aperture = 4, topology = "TRIANGLE"),savegrid = "world_triangle_res10.shp")
+
+coord=read.table("FEEMS.coord")
+outer=read.table("FEEMS.outer")
+plot(outer$V1,outer$V2,col="red",pch=16)
+points(coord$V1,coord$V2,col="green",pch=16)
+
+
+
+
+```
+
+```{r}
+library(sf)
+library(dggridR)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(dplyr)
+
+# 1. Get Louisiana + Mississippi polygons
+usa <- ne_states(country = "United States of America", returnclass = "sf")
+la <- usa %>% filter(name %in% c("Louisiana", "Mississippi"))
+
+# 2. Create DGGS grid
+dggs <- dgconstruct(
+  res = 7,  # increase for finer resolution
+  topology = "HEXAGON",
+  projection = "ISEA",
+  precision = 7
+)
+
+# 3. Get centroids covering bounding box
+bbox <- st_bbox(la)
+
+# Generate grid cell centers over region
+centers <- dgseqnum(dggs, bbox["ymin"], bbox["xmin"], bbox["ymax"], bbox["xmax"])
+cell_centers <- dgcellstolatlong(dggs, centers$seqnum)
+
+# 4. Convert to polygons (grid cells)
+grid <- dgcellstogrid(dggs, centers$seqnum)
+grid_sf <- st_as_sf(grid)
+
+# 5. Clip to Louisiana and Mississippi
+grid_clipped <- st_intersection(grid_sf, la)
+
+# 6. Plot
+library(tmap)
+tmap_mode("view")
+tm_shape(grid_clipped) +
+  tm_borders(col = "black") +
+  tm_fill(col = "lightblue", urban_PC1 = 0.5) +
+  tm_shape(la) +
+  tm_borders(col = "red", lwd = 2)
+
+```
+
+## Running a RDA to better quantify the local environment
+
+To quantify urbanization across our sites, we included 25 landscape variables to describe climatic and structural site variation. We included all 19 BIOCLIM ([76](https://www.pnas.org/doi/10.1073/pnas.2216789120#core-r76)) climate layers (v2.1) and light at night global radiance (light at night: NOAA Global Radiance Calibrated Nighttime Lights F16_20100111-20110731_rad_v4 GeoTIFF, <https://ngdc.noaa.gov/eog/dmsp/download_radcal.html>). Because both of these datasets are at a larger resolution (\~1 km^2^) and summarize variables that have diffuse effects across the landscape (e.g., effects of light at night are not constrained by site boundaries), we extracted site-level averages from each sampled area plus a 1-km buffer around the perimeter. We also included two higher-resolution (30 m^2^) land-cover layers: impervious surface cover ([77](https://www.pnas.org/doi/10.1073/pnas.2216789120#core-r77)) and canopy cover ([78](https://www.pnas.org/doi/10.1073/pnas.2216789120#core-r78)), from which we extracted site-level averages within the boundaries of each sampled site.
+
+I do not characterize the habitat in terms of numbers of perchs like in Winchell's paper given my lack of expertise and lack of time.
+
+How can we extract these variables? We have the file, F16_20100111-20110731_rad_v4.geotiff
+
+We can also obtain canopy cover from 2015 and fractional impervious surface from 2015-2023 from here: https://www.mrlc.gov/data. We will use 2015 data.
+
+```{r}
+
+library(geodata)
+library(terra)
+library(adegenet)
+library(vegan)
+library(data.table)
+library(ggplot2)
+library(robust)
+library(qvalue)
+library(psych)
+library(terra)
+library(raster)
+library(rworldmap)
+library(dplyr)
+library(caret)
+
+
+gen=read.PLINK("filtered_small.raw",map.file = "filtered_small.map") ##already imputed
+
+###Script to generate PCA to correct for pop structure later. Same script adapted with and without clones
+pca_imputed <- rda(gen, scale=T) # PCA in vegan uses the rda() call without any predictors
+screeplot(pca_imputed, type = "barplot", npcs=10, main="PCA Eigenvalues")
+PCs <- scores(pca_imputed, choices=c(1:3), display="sites", scaling=0)
+signif.axis <- anova.cca(pca_imputed, by="axis", parallel=getOption("mc.cores"))
+
+write.table(cbind(gen@ind.names,PCs),file="PCA_imputed_small.txt",quote=F,sep="\t",row.names=F,col.names=F)
+
+
+
+
+
+coords = read.table("FEEMS.coord",h=F)
+colnames(coords)=c("lon","lat")
+pca=read.table("PCA_imputed_small.txt")
+colnames(pca)=c("Individual",paste("PC",seq(1:(ncol(pca)-1)),sep=""))
+total=cbind(pca,coords)
+
+colnumber=ncol(total)
+for (i in 1:19){
+bioclim <- terra::rast(paste("/home/yannbourgeois/Desktop/CurrentWORK/Linum/wc2.1_5m_bio/wc2.1_5m_bio_",i,".tif",sep=""))  ##Fairly low resolution, but should not matter too much at that scale
+points <- terra::vect(total[,c(colnumber-1,colnumber)], geom = c("lon", "lat"), crs = "EPSG:4326")
+
+# Extract Bioclim data, assigning nearest available value for missing points
+total[,colnumber+i] <- terra::extract(bioclim, points, method = "bilinear")[,2]
+
+colnames(total)[colnumber+i]=paste("bio",i,sep="")
+}
+canopy_cover=terra::rast("nlcd_tcc_CONUS_2015_v2021-4/nlcd_tcc_conus_2015_v2021-4.tif")
+nightlight=terra::rast("F16_20100111-20110731_rad_v4.geotiff/F16_20100111-20110731_rad_v4.avg_vis.tif") ##the other file just lists counts to check quality of inference
+perc_impervious=terra::rast("Annual_NLCD_FctImp_2015-2023_CU_C1V0/Annual_NLCD_FctImp_2015_CU_C1V0.tif")
+
+points <- terra::vect(total[,c(colnumber-1,colnumber)], geom = c("lon", "lat"), crs = "EPSG:4326")
+
+# Extract Bioclim data, assigning nearest available value for missing points
+# Create 1000m buffer around each point (assuming CRS is in meters)
+buffers <- terra::buffer(points, width = 1000)
+# Extract average nightlight value within each buffer
+total[,ncol(total)+1] <- terra::extract(canopy_cover, buffers, fun = mean, na.rm = TRUE)[,2]
+colnames(total)[ncol(total)]="canopy_cover"
+total[,ncol(total)+1] <- terra::extract(nightlight, buffers, fun = mean, na.rm = TRUE)[,2]
+colnames(total)[ncol(total)]="nightlight"
+total[,ncol(total)+1] <- terra::extract(perc_impervious, buffers, fun = mean, na.rm = TRUE)[,2]
+colnames(total)[ncol(total)]="per_impervious"
+
+
+
+
+map.polygon <- getMap(resolution = "low")
+
+pdf(file="Supp_Figure_urban_data.pdf")
+ggplot() +
+    # Plot the map
+    geom_path(data = map.polygon, aes(x = long, y = lat, group = group), color = "black", urban_PC1 = 1) +
+    
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = lon, y = lat, fill = canopy_cover), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+    
+    scale_fill_gradient2(low = "darkblue", high = "red") +  
+    xlim(-91.5, -89.3) + 
+    ylim(29, 31) +
+    coord_equal() + 
+    xlab("Longitude") +
+    ylab("Latitude") + 
+    theme_bw()
+
+ggplot() +
+    # Plot the map
+    geom_path(data = map.polygon, aes(x = long, y = lat, group = group), color = "black", urban_PC1 = 1) +
+    
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = lon, y = lat, fill = nightlight), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+    
+    scale_fill_gradient2(low = "darkblue", high = "red") +  
+    xlim(-91.5, -89.3) + 
+    ylim(29, 31) +
+    coord_equal() + 
+    xlab("Longitude") +
+    ylab("Latitude") + 
+    theme_bw()
+
+
+ggplot() +
+    # Plot the map
+    geom_path(data = map.polygon, aes(x = long, y = lat, group = group), color = "black", urban_PC1 = 1) +
+    
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = lon, y = lat, fill = per_impervious), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+    
+    scale_fill_gradient2(low = "darkblue", high = "red") +  
+    xlim(-91.5, -89.3) + 
+    ylim(29, 31) +
+    coord_equal() + 
+    xlab("Longitude") +
+    ylab("Latitude") + 
+    theme_bw()
+
+dev.off()
+
+
+
+pca_result <- prcomp(na.omit(total[,(colnumber+1):(ncol(total)-3)]), scale. = TRUE)   ##only bioclim
+summary(pca_result)  # See variance explained
+
+
+pca_var <- pca_result$sdev^2
+pca_var_exp <- pca_var / sum(pca_var) * 100  # Convert to percentage
+
+# Extract PCA scores (sample coordinates)
+pca_scores <- as.data.frame(pca_result$x)
+
+
+# Create a scree plot
+ggplot(data = data.frame(PC = 1:length(pca_var_exp), Variance = pca_var_exp), 
+       aes(x = PC, y = Variance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_line(aes(group = 1), color = "red") +
+  geom_point(color = "red") +
+  labs(title = "Scree Plot of PCA",
+       x = "Principal Component",
+       y = "Variance Explained (%)") +
+  theme_minimal()
+
+
+
+
+pca_loadings <- as.data.frame(pca_result$rotation[, 1:3])
+pca_loadings$Variable <- rownames(pca_loadings)
+
+# PCA scatter plot + variable loadings
+ggplot(pca_scores, aes(x = PC1, y = PC2)) +
+  geom_point(size = 3, urban_PC1 = 0.7, color = "blue") +
+  geom_segment(data = pca_loadings, aes(x = 0, y = 0, xend = PC1*15, yend = PC2*15),
+               arrow = arrow(length = unit(0.3, "cm")), color = "red") +  # Arrows for loadings
+  geom_text(data = pca_loadings, aes(x = PC1*15, y = PC2*15, label = Variable),
+            vjust = 1, color = "red") +
+  labs(title = "PCA Biplot with Loadings",
+       x = paste0("PC1 (", round(pca_var_exp[1], 1), "%)"),
+       y = paste0("PC2 (", round(pca_var_exp[2], 1), "%)")) +
+  theme_minimal()
+
+ggplot(pca_scores, aes(x = PC1, y = PC3)) +
+    geom_point(size = 3, urban_PC1 = 0.7, color = "blue") +
+    geom_segment(data = pca_loadings, aes(x = 0, y = 0, xend = PC1*15, yend = PC3*15),
+                 arrow = arrow(length = unit(0.3, "cm")), color = "red") +  # Arrows for loadings
+    geom_text(data = pca_loadings, aes(x = PC1*15, y = PC3*15, label = Variable),
+              vjust = 1, color = "red") +
+    labs(title = "PCA Biplot with Loadings",
+         x = paste0("PC1 (", round(pca_var_exp[1], 1), "%)"),
+         y = paste0("PC3(", round(pca_var_exp[3], 1), "%)")) +
+    theme_minimal()
+
+
+
+colnames(pca_scores)=paste("env_",colnames(pca_scores),sep="")
+
+
+
+####And now a PCA on variables describing urban habitat:
+
+
+pca_result <- prcomp(na.omit(total[,(ncol(total)-2):ncol(total)]), scale. = TRUE)   ##only bioclim
+summary(pca_result)  # See variance explained
+
+
+pca_var <- pca_result$sdev^2
+pca_var_exp <- pca_var / sum(pca_var) * 100  # Convert to percentage
+
+# Extract PCA scores (sample coordinates)
+pca_scores2 <- as.data.frame(pca_result$x)
+
+
+# Create a scree plot
+ggplot(data = data.frame(PC = 1:length(pca_var_exp), Variance = pca_var_exp), 
+       aes(x = PC, y = Variance)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_line(aes(group = 1), color = "red") +
+  geom_point(color = "red") +
+  labs(title = "Scree Plot of PCA",
+       x = "Principal Component",
+       y = "Variance Explained (%)") +
+  theme_minimal()
+
+
+
+
+pca_loadings <- as.data.frame(pca_result$rotation[, 1:3])
+pca_loadings$Variable <- rownames(pca_loadings)
+
+# PCA scatter plot + variable loadings
+ggplot(pca_scores2, aes(x = PC1, y = PC2)) +
+  geom_point(size = 3, urban_PC1 = 0.7, color = "blue") +
+  geom_segment(data = pca_loadings, aes(x = 0, y = 0, xend = PC1*15, yend = PC2*15),
+               arrow = arrow(length = unit(0.3, "cm")), color = "red") +  # Arrows for loadings
+  geom_text(data = pca_loadings, aes(x = PC1*15, y = PC2*15, label = Variable),
+            vjust = 1, color = "red") +
+  labs(title = "PCA Biplot with Loadings",
+       x = paste0("PC1 (", round(pca_var_exp[1], 1), "%)"),
+       y = paste0("PC2 (", round(pca_var_exp[2], 1), "%)")) +
+  theme_minimal()
+
+ggplot(pca_scores2, aes(x = PC1, y = PC3)) +
+    geom_point(size = 3, urban_PC1 = 0.7, color = "blue") +
+    geom_segment(data = pca_loadings, aes(x = 0, y = 0, xend = PC1*15, yend = PC3*15),
+                 arrow = arrow(length = unit(0.3, "cm")), color = "red") +  # Arrows for loadings
+    geom_text(data = pca_loadings, aes(x = PC1*15, y = PC3*15, label = Variable),
+              vjust = 1, color = "red") +
+    labs(title = "PCA Biplot with Loadings",
+         x = paste0("PC1 (", round(pca_var_exp[1], 1), "%)"),
+         y = paste0("PC3(", round(pca_var_exp[3], 1), "%)")) +
+    theme_minimal()
+
+
+
+colnames(pca_scores2)=paste("urban_",colnames(pca_scores2),sep="")
+total=cbind(total,pca_scores,pca_scores2)
+
+
+####
+
+write.table(total,file="Env_data_RDA.txt",row.names = F,quote=F,sep="\t")
+
+
+# PCA scatter plot + variable loadings
+ggplot(total, aes(x = PC1, y = PC2, color = paste(lon,lat))) +
+  geom_point(size = 3, urban_PC1 = 0.7) +
+  labs(title = "PCA genetic imputed data",
+       x = paste0("PC1 (", round(100*pca_imputed$CA$eig/sum(pca_imputed$CA$eig), 1)[1], "%)"),
+       y = paste0("PC2 (", round(100*pca_imputed$CA$eig/sum(pca_imputed$CA$eig), 1)[2], "%)")) +
+  theme_minimal()
+
+
+
+
+
+map.polygon <- getMap(resolution = "low")
+
+
+panel3a=ggplot() +
+    # Plot the map
+    geom_path(data = map.polygon, aes(x = long, y = lat, group = group), color = "black", urban_PC1 = 1) +
+    
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = lon, y = lat, fill = env_PC1), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+    
+    scale_fill_gradient2(low = "darkblue", high = "red") +  
+    xlim(-91.5, -89.3) + 
+    ylim(29, 31) +
+    coord_equal() + 
+    xlab("Longitude") +
+    ylab("Latitude") + 
+    theme_bw()
+
+
+panel3b=ggplot() +
+    # Plot the map
+    geom_path(data = map.polygon, aes(x = long, y = lat, group = group), color = "black", urban_PC1 = 1) +
+    
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = lon, y = lat, fill = env_PC2), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+    
+    scale_fill_gradient2(low = "darkblue", high = "red") +  
+    xlim(-91.5, -89.3) + 
+    ylim(29, 31) +
+    coord_equal() + 
+    xlab("Longitude") +
+    ylab("Latitude") + 
+    theme_bw()
+
+
+
+panel3c=ggplot() +
+    # Plot the map
+    geom_path(data = map.polygon, aes(x = long, y = lat, group = group), color = "black", urban_PC1 = 1) +
+    
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = lon, y = lat, fill = env_PC3), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+    
+    scale_fill_gradient2(low = "darkblue", high = "red") +  
+    xlim(-91.5, -89.3) + 
+    ylim(29, 31) +
+    coord_equal() + 
+    xlab("Longitude") +
+    ylab("Latitude") + 
+    theme_bw()
+
+
+###Urban variables
+panel3d=ggplot() +
+    # Plot the map
+    geom_path(data = map.polygon, aes(x = long, y = lat, group = group), color = "black", urban_PC1 = 1) +
+    
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = lon, y = lat, fill = urban_PC1), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+    
+    scale_fill_gradient2(low = "darkblue", high = "red") +  
+    xlim(-91.5, -89.3) + 
+    ylim(29, 31) +
+    coord_equal() + 
+    xlab("Longitude") +
+    ylab("Latitude") + 
+    theme_bw()
+
+
+
+
+####Genetic variation described by PCA on pruned imputed data is similar to what was obtained with ANGSD tools. 
+ggplot() +
+    # Plot the map
+    geom_path(data = map.polygon, aes(x = long, y = lat, group = group), color = "black", urban_PC1 = 1) +
+    
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = lon, y = lat, fill = PC1), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+    
+    scale_fill_gradient2(low = "darkblue", high = "red") +  
+    xlim(-91.5, -89.3) + 
+    ylim(29, 31) +
+    coord_equal() + 
+    xlab("Longitude") +
+    ylab("Latitude") + 
+    theme_bw()
+
+
+
+
+ggplot() +
+    # Plot the map
+    geom_path(data = map.polygon, aes(x = long, y = lat, group = group), color = "black", urban_PC1 = 1) +
+    
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = lon, y = lat, fill = PC2), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+    
+    scale_fill_gradient2(low = "darkblue", high = "red") +  
+    xlim(-91.5, -89.3) + 
+    ylim(29, 31) +
+    coord_equal() + 
+    xlab("Longitude") +
+    ylab("Latitude") + 
+    theme_bw()
+
+
+
+
+ggplot() +
+    # Plot the map
+    geom_path(data = map.polygon, aes(x = long, y = lat, group = group), color = "black", urban_PC1 = 1) +
+    
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = lon, y = lat, fill = PC3), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+    
+    scale_fill_gradient2(low = "darkblue", high = "red") +  
+    xlim(-91.5, -89.3) + 
+    ylim(29, 31) +
+    coord_equal() + 
+    xlab("Longitude") +
+    ylab("Latitude") + 
+    theme_bw()
+
+
+
+```
+
+At this stage, we can assemble Figure 1 (showing boxplot of inbreeding, PCA, environmental PCs, and FEEMS map):
+
+```{r}
+library(ggplot2)
+library(ggpubr)
+library(MASS)
+inbreeding=read.table("Relatedness/ngsF_results.txt",h=T)
+tokeep=read.table("Relatedness/low_missingness_NewOrleans.txt")
+inbreeding=subset(inbreeding,inbreeding$BAM_file%in%tokeep$V1)
+
+table=read.table("./correspondance_IDpheno_IDsequence",h=T)
+coordinates=read.table("./Phenotypes.txt",h=T)
+table=merge(table,coordinates,by="animal")
+
+inbreeding=merge(table,inbreeding,by="BAM_file",all=T)
+inbreeding$Season=ifelse(is.na(inbreeding$Season)==TRUE,'Countryside',inbreeding$Season)
+inbreeding$long_term_status=ifelse(is.na(inbreeding$long_term_status)==T,'not assessed',inbreeding$long_term_status)
+
+
+desired_order <- c('S10', 'F10','S11','S12','S13', 'S14', 'F14','Countryside')
+
+# Reorder the Season column
+inbreeding$Season <- factor(inbreeding$Season, levels = desired_order)
+
+inbreeding_plot=ggplot(inbreeding, aes(x = Season, y = F)) +
+  geom_boxplot() +
+  labs(title = "",
+       x = "Season",
+       y = "F") +
+  theme_minimal()
+
+###Obtain list of inbreeding coefficients for individuals to be used in FST/demographic inference.
+colnames(unrelated_IDs)=c("BAM_file","Depth")
+inbreeding_F=merge(unrelated_IDs,inbreeding,by="BAM_file",sort=F)
+inbreeding_F$BAM_file==unrelated_IDs$BAM_file
+
+
+####ANOVA tests
+
+#find optimal lambda for Box-Cox transformation 
+inbreeding$urban=ifelse(inbreeding$Season=="Countryside","non-urban","urban")
+bc <- boxcox(inbreeding$F~inbreeding$urban) 
+#find optimal lambda for Box-Cox transformation 
+(lambda <- bc$x[which.max(bc$y)])
+model <- aov(((inbreeding$F^lambda-1)/lambda) ~ inbreeding$urban + inbreeding$long_term_status)
+#model <- aov(inbreeding$F ~ inbreeding$urban + inbreeding$long_term_status)
+
+plot(model)
+summary(model)
+
+###final model for paper
+model <- aov(((inbreeding$F^lambda-1)/lambda) ~ inbreeding$urban + inbreeding$Season)
+
+plot(model)
+summary(model)
+
+###Produce FIgure 1
+
+
+pop<-read.table("./Structure_pcangsd/individual_info.txt",h=T)[1:71,]
+C <- as.matrix(read.table("./Structure_pcangsd/PCA_NO_SNPs.cov"))
+e <- eigen(C)
+
+#plot(e$vectors[,1:2],col=pop[,3],xlab="PC1, 4.9%",ylab="PC2, 2.23%", main="individual allele frequency",pch=16, cex=2)
+# Create a data frame for ggplot
+
+df <- data.frame(PC1 = e$vectors[, 1], 
+                 PC2 = e$vectors[, 2], 
+                 Population = factor(pop[, 3]))  # Convert population to a factor for coloring
+df$Population=ifelse(df$Population=="darkgrey","urban","non-urban")
+# Plot with ggplot
+PCA_plot=ggplot(df, aes(x = PC1, y = PC2, color = Population, shape = Population)) +
+  geom_point(size = 3) +  # Use size = 2 and shape = 16 (solid circle) to match original plot
+  labs(x = "PC1, 4.9%", y = "PC2, 2.23%", title = "") +
+  theme_minimal() + scale_color_manual(values =  c("#619CFF","#C77CFF"))
+ 
+      
+
+library(magick)
+library(grid)
+library(gridExtra)
+library(patchwork)
+# Read the first page of the PDF as an image (you can change the number if the summary is on another page)
+summary_image <- image_read_pdf("./FEEMS_plot.pdf", pages = 1)  # Density for good resolution
+
+FEEMS_plot <- rasterGrob(as.raster(summary_image), interpolate = TRUE)
+
+
+           
+# A and B stacked
+PanelsAB <- inbreeding_plot / PCA_plot
+
+# Panel C: 2x2 grid
+PanelC <- (panel3a | panel3b) / (panel3c | panel3d)
+#PanelC= PanelC + plot_layout(guides = "collect")
+# Panel D: FEEMS
+PanelD <- FEEMS_plot
+
+# Stack C and D, with relative heights
+PanelsCD <- PanelC / PanelD 
+
+# Combine A/B with C/D and add proper tags
+final_plot <- (PanelsAB | PanelsCD) +
+  plot_annotation(tag_levels = 'A') & 
+  theme(plot.tag = element_text(size = 24, face = "bold"))
+
+# Save to file
+pdf("New_Figure_1.pdf", width = 15, height = 12)
+print(final_plot)
+dev.off()
+
+
+PanelsAB <- inbreeding_plot / PCA_plot + plot_annotation(tag_levels = 'A')
+PanelCD <- ((panel3a | panel3b) / (panel3c | panel3d)) / FEEMS_plot
+PanelD <- FEEMS_plot
+
+pdf(file="New_Figure_1.pdf",width=12,height=9)
+final_plot <- PanelsAB | PanelCD + plot_annotation(tag_levels = c('A', 'B', 'C','D'))
+final_plot
+dev.off()
+
+
+
+
+```
+
+```{r}
+library(data.table)
+
+library(ggplot2)
+library(dplyr)
+library(vegan)
+library(adegenet)
+library(qvalue)
+library(robust)
+#library(robust,lib.loc = "./")
+gen=read.PLINK("filtered_small.raw",map.file = "filtered_small.map") ##already imputed
+
+
+
+total=read.table("Env_data_RDA.txt",h=T)
+
+total=subset(total,total$Individual  %in% gen@ind.names)
+total <- total %>%
+  mutate(Individual = factor(Individual, levels = gen@ind.names)) %>%
+  arrange(Individual)
+
+total[,26:50] <- scale(total[,26:50], center=TRUE, scale=TRUE) # center=TRUE, scale=TRUE are the defaults for scale() scale for env_PC1 to env_PC3.
+
+
+###Procedure for variable selection
+## Null model
+RDA0 <- rda(gen ~ 1 + Condition(PC1 + PC2 + PC3) ,total, scale=F) 
+
+## Full model
+RDAfull <- rda(gen ~ urban_PC1 + env_PC1 + env_PC2 + env_PC3 + Condition(PC1 + PC2 + PC3), total, scale=F )
+#RDAfull <- rda(gen ~ canopy_cover + nightlight + per_impervious + env_PC1 + env_PC2 + env_PC3 + Condition(PC1 + PC2 + PC3), total, scale=F )
+
+#To conduct the selection procedure we used the ordiR2step function of the package vegan and the following stopping criteria: variable significance of p < 0.01 using 1000 permutations, and the adjusted R2 of the global model. We run this on a small thinned dataset to get an idea since the whole dataset is huge
+
+## Stepwise procedure with ordiR2step function
+mod <- ordiR2step(RDA0, RDAfull, Pin = 0.01, R2permutations = 1000, R2scope = T)
+mod$anova
+###best model is the complete one, nice. about 5.56% of variance explained by environment, 9.26% by genetics
+##                    R2.adj Df    AIC      F Pr(>F)   
+## + urban_PC1     0.0098816  1 961.42 2.0795  0.002 **
+## + env_PC1       0.0154106  1 961.73 1.6016  0.002 **
+## + env_PC3       0.0183942  1 962.33 1.3225  0.002 **
+## + env_PC2       0.0211519  1 962.93 1.2959  0.002 **
+## <All variables> 0.0211519                           
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+complete=rda(formula = gen ~ urban_PC1 + env_PC1 + env_PC2 + env_PC3 + Condition(PC1 + PC2 + PC3), total, scale=F)
+#complete=rda(formula = gen ~ urban_PC1 + env_PC1 + env_PC2 + env_PC3 + Condition(PC1 ), total, scale=F)
+plot(complete, scaling=3) 
+plot(complete, choices = c(1, 3),scaling=3)
+vif.cca(complete)
+screeplot(complete)
+#signif.axis <- anova.cca(complete, by="axis", parallel=getOption("mc.cores"))
+#signif.axis   ###RDA1 and RDA2 are significant.
+
+
+load.rda <- scores(complete, choices=c(1:4), display="species")  # Species scores for the first three constrained axes
+hist(load.rda[,1], main="Loadings on RDA1") ##Everything looks decently normal.
+
+hist(load.rda[,2], main="Loadings on RDA2")##Everything looks decently normal.
+hist(load.rda[,3], main="Loadings on RDA3") ##Everything looks decently normal.
+hist(load.rda[,4], main="Loadings on RDA4") ##Everything looks decently normal.
+
+
+zscore <- function(x){
+  score <- (x-mean(x))/ sd(x)     # find loadings +/-z sd from mean loading     
+}
+
+
+positions=as.data.frame(fread("filtered_small.map"))
+Z=as.data.frame(cbind(positions[,c(1,4)],zscore(load.rda[,1])))
+colnames(Z)=c("CHR","POSITION","Zscore")
+Z=subset(Z,Z$CHR<7)
+ggplot(Z, aes(x = POSITION, y = Zscore, color = CHR)) +
+  geom_point() + # Points on the line
+  facet_wrap(~CHR) +  # Separate chromosomes
+  labs(title = "Manhattan Plot of Partial RDA results",
+       x = "Genomic Position",
+       y = "Z-score for RDA1 (urban-country axis)") +
+  #scale_color_manual(values = rep(c("black", "blue"),14)) +
+  theme_minimal() +  theme(legend.position = "none")  # Remove legend for clarity
+
+
+
+chi_sq_values <- Z$Zscore^2
+lambda <- median(chi_sq_values) / qchisq(0.5, df = 1)
+
+Z$P_val =  2 * (1 - pnorm(abs(Z$Zscore)))/max(1,lambda)
+
+
+test=subset(Z,Z$CHR==2)
+plot(test$POSITION,test$Zscore,xlim=c(23.5e6,25.5e6))
+plot(test$POSITION,test$Zscore,xlim=c(20.5e6,30.5e6))
+abline(h=3)
+abline(h=3.2)
+
+test=subset(RDA,RDA$CHR==2)
+plot(test$POSITION,-log10(test$P_val),xlim=c(23.5e6,25.5e6))
+abline(v=24750000)
+
+test=subset(RDA,RDA$CHR==4)
+plot(test$POSITION,-log10(test$P_val),xlim=c(121.5e6,123.5e6))
+abline(v=122750000)
+```
+
+```{r}
+
+library(data.table)
+library(ggplot2)
+RDA=as.data.frame(fread("RDApartial_4RDAs.txt.gz"))
+#RDA=as.data.frame(fread("RDApartial_1PC.txt.gz"))
+#RDA=as.data.frame(fread("RDApartial_2PCs.txt.gz"))
+#RDA=as.data.frame(fread("RDApartial_nocorr.txt.gz"))
+                  
+
+#RDA2=as.data.frame(cbind(gen@chromosome,gen@position,RDA2))
+colnames(RDA)=c("CHR","POSITION","P_val","Q_val")
+
+RDAplot=subset(RDA,RDA$P_val<0.05 & RDA$CHR < 7)
+ggplot(RDAplot, aes(x = POSITION, y = -log10(P_val), color = CHR)) +
+  geom_point() + # Points on the line
+  facet_wrap(~CHR) +  # Separate chromosomes
+  labs(title = "Manhattan Plot of Partial RDA results",
+       x = "Genomic Position",
+       y = "P-value based on Mahalanobis distance") +
+  #scale_color_manual(values = rep(c("black", "blue"),14)) +
+  theme_minimal() +  theme(legend.position = "none")  # Remove legend for clarity
+
+
+
+
+###We can also fish for outliers using the scores along distinct RDA axes.
+RDA2=as.data.frame(fread("RDApartial_loadings.txt.gz"))
+#RDA2=as.data.frame(fread("RDApartial_loadings_2PCs.txt.gz"))
+
+colnames(RDA2)=c("MRK","CHR","POSITION","score_RDA1","score_RDA2","score_RDA3","score_RDA4","CCA_RDA1","CCA_RDA2","CCA_RDA3","CCA_RDA4")
+
+zscore <- function(x){
+  score <- (x-mean(x))/ sd(x)     # find loadings +/-z sd from mean loading     
+}
+
+
+Z=cbind(RDA2[,2:3],zscore(RDA2$score_RDA1))
+colnames(Z)=c("CHR","POSITION","Zscore")
+
+forqqplot=Z[sample(1:nrow(Z),10000),]
+
+qqplot(qchisq(ppoints(10000), df = 1), forqqplot$Zscore^2,
+       main = expression("Chi-Square Q-Q Plot"),
+       xlab = "Theoretical Quantiles",
+       ylab = "Observed Quantiles")
+abline(0, 1, col = "red", lty = 2)
+
+
+
+
+chi_sq_values <- Z$Zscore^2
+lambda <- median(chi_sq_values) / qchisq(0.5, df = 1)
+
+Z$P_val =  2 * (1 - pnorm(abs(Z$Zscore)))/max(1,lambda)
+
+Z=subset(Z,abs(Z$Zscore)>=2 & Z$CHR<7)
+
+forqqplot=Z[sample(1:nrow(Z),10000),]
+
+
+ggplot(Z, aes(x = POSITION, y = -log10(P_val), color = CHR)) +
+  geom_point() + # Points on the line
+  facet_wrap(~CHR) +  # Separate chromosomes
+  labs(title = "Manhattan Plot of Partial RDA results",
+       x = "Genomic Position",
+       y = "Z-score for RDA2 (latitude)") +
+  #scale_color_manual(values = rep(c("black", "blue"),14)) +
+  theme_minimal() +  theme(legend.position = "none")  # Remove legend for clarity
+
+
+
+
+###At last, we can regenerate Mahalanobis distance-based p-values using a reduced set of axes (for example the first 2 RDA axes which are significant)
+
+
+rdadapt<-function(rda,K)
+{
+#  loadings<-rda$CCA$v[,1:as.numeric(K)] #original code for on the fly calculation
+  loadings<-rda[,1:as.numeric(K)] #original code for on the fly calculation
+  resscale <- apply(loadings, 2, scale)
+  resmaha <- covRob(resscale, distance = TRUE, na.action= na.omit, estim="pairwiseGK")$dist
+  lambda <- median(resmaha)/qchisq(0.5,df=K)
+  reschi2test <- pchisq(resmaha/lambda,K,lower.tail=FALSE)
+  qval <- qvalue(reschi2test)
+  q.values_rdadapt<-qval$qvalues
+  return(data.frame(p.values=reschi2test, q.values=q.values_rdadapt))
+}
+
+RDA_2_RDA<-rdadapt(as.matrix(RDA2[,c(8,11)]), 2) ###Will output P-values corrected for inflation and qvalues, using the Mahala distance for the 2 RD strongly correlated with the urban PC.
+RDA_2_RDA$CHR=RDA$CHR
+RDA_2_RDA$POSITION=RDA$POSITION
+
+colnames(RDA_2_RDA)=c("P_val","Q_val","CHR","POSITION")
+
+RDAplot=subset(RDA_2_RDA,RDA_2_RDA$P_val<0.05)
+
+ggplot(RDAplot, aes(x = POSITION, y = -log10(P_val), color = CHR)) +
+  geom_point() + # Points on the line
+  facet_wrap(~CHR) +  # Separate chromosomes
+  labs(title = "Manhattan Plot of Partial RDA results",
+       x = "Genomic Position",
+       y = "P-value based on Mahalanobis distance (2 RDA axes)") +
+  #scale_color_manual(values = rep(c("black", "blue"),14)) +
+  theme_minimal() +  theme(legend.position = "none")  # Remove legend for clarity
+
+write.table(RDA_2_RDA,file="RDApartial_2PCs_2urbanRDaxes.txt",row.names=F,quote=F,sep="\t")
+
+
+```
+
+We can also visualize the outlier loci found with the Mahalanobis distance in comparison with neutral loci using a RDA biplot:
+
+```{r}
+library(GenomicRanges)
+library(data.table)
+TAB_loci <- RDA2[,c(2:7)] # vegan references "species", here these are the loci
+
+
+df_intervals=as.data.frame(fread("Selection_tests/candidate_regions_IWTomics.bed"))[,1:3]
+df_intervals=as.data.frame(fread("Selection_tests/candidate_windows_Winchell.bed"))[,1:3]
+colnames(df_intervals)=c("chr","start","end")
+# Create GRanges objects
+gr_intervals <- GRanges(seqnames = df_intervals$chr,
+                        ranges = IRanges(start = df_intervals$start, end = df_intervals$end))
+TAB_loci$CHR=ifelse(TAB_loci$CHR==1,"chr1",TAB_loci$CHR)
+TAB_loci$CHR=ifelse(TAB_loci$CHR==2,"chr2",TAB_loci$CHR)
+TAB_loci$CHR=ifelse(TAB_loci$CHR==3,"chr3",TAB_loci$CHR)
+TAB_loci$CHR=ifelse(TAB_loci$CHR==4,"chr4",TAB_loci$CHR)
+TAB_loci$CHR=ifelse(TAB_loci$CHR==5,"chr5",TAB_loci$CHR)
+TAB_loci$CHR=ifelse(TAB_loci$CHR==6,"chr6",TAB_loci$CHR)
+
+gr_positions <- GRanges(seqnames = TAB_loci$CHR,
+                        ranges = IRanges(start = TAB_loci$POSITION, end = TAB_loci$POSITION))
+
+# Find overlaps
+hits <- findOverlaps(gr_positions, gr_intervals)
+
+# Mark positions that have at least one overlap
+TAB_loci$in_interval <- 1:nrow(TAB_loci) %in% queryHits(hits)
+TAB_loci$type =ifelse(RDA$Q_val<0.2,"RDA outlier only","Neutral") 
+TAB_loci$type =ifelse(TAB_loci$in_interval==TRUE & RDA$Q_val<0.2,"PBS outlier and RDA outlier",TAB_loci$type)
+TAB_loci$type =ifelse(TAB_loci$in_interval==TRUE & RDA$Q_val>=0.2,"PBS outlier but not RDA outlier",TAB_loci$type) 
+
+boxplot(TAB_loci$score_RDA1~TAB_loci$type)
+save=TAB_loci
+
+TAB_var <- read.table("RDA_biplot_3PCs",h=T,row.names = 1)
+#as.data.frame(scores(complete, choices=c(1:4), display="bp")) # Pulls the biplot scores from the reduced dataset from before. I guess this could also be obtained from the full dataset since we export it I think when summarizing the data. Is probably in the *err or *out job output files. 
+
+selected=subset(TAB_loci,TAB_loci$type=="PBS outlier but not RDA outlier")
+neutral=subset(TAB_loci,TAB_loci$type=="Neutral")[sample(10000),]
+TAB_loci=rbind(neutral,selected)
+## Biplot of RDA loci and variables scores
+ggplot() +
+  geom_hline(yintercept=0, linetype="dashed", color = gray(.80), size=0.6) +
+  geom_vline(xintercept=0, linetype="dashed", color = gray(.80), size=0.6) +
+  geom_point(data = TAB_loci, aes(x=score_RDA1*20, y=score_RDA2*20, colour = type), size = 1.4) +
+  scale_color_manual(values = c("lightblue","darkred", "#F9A242FF", "#6B4596FF")) +
+  geom_segment(data = TAB_var, aes(xend=RDA1, yend=RDA2, x=0, y=0), colour="black", size=0.15, linetype=1, arrow=arrow(length = unit(0.02, "npc"))) +
+  geom_text(data = TAB_var, aes(x=1.1*RDA1, y=1.1*RDA2, label = row.names(TAB_var)), size = 2.5, family = "Times") +
+  xlab("RDA 1") + ylab("RDA 2") +
+  facet_wrap(~"RDA space") +
+  guides(color=guide_legend(title="Locus type")) +
+  theme_bw(base_size = 11, base_family = "Times") +
+  theme(panel.background = element_blank(), legend.background = element_blank(), panel.grid = element_blank(), plot.background = element_blank(), legend.text=element_text(size=rel(.8)), strip.text = element_text(size=11))
+
+
+
+
+ggplot() +
+  geom_hline(yintercept=0, linetype="dashed", color = gray(.80), size=0.6) +
+  geom_vline(xintercept=0, linetype="dashed", color = gray(.80), size=0.6) +
+  geom_point(data = TAB_loci, aes(x=score_RDA3*20, y=score_RDA4*20, colour = type), size = 1.4) +
+  scale_color_manual(values = c("lightblue","darkred", "#F9A242FF", "#6B4596FF")) +
+  geom_segment(data = TAB_var, aes(xend=RDA3, yend=RDA4, x=0, y=0), colour="black", size=0.15, linetype=1, arrow=arrow(length = unit(0.02, "npc"))) +
+  geom_text(data = TAB_var, aes(x=1.1*RDA3, y=1.1*RDA4, label = row.names(TAB_var)), size = 2.5, family = "Times") +
+  xlab("RDA 3") + ylab("RDA 4") +
+  facet_wrap(~"RDA space") +
+  guides(color=guide_legend(title="Locus type")) +
+  theme_bw(base_size = 11, base_family = "Times") +
+  theme(panel.background = element_blank(), legend.background = element_blank(), panel.grid = element_blank(), plot.background = element_blank(), legend.text=element_text(size=rel(.8)), strip.text = element_text(size=11))
+
+
+#write.table(subset(TAB_loci,TAB_loci$type=="Outlier"),file="RDA_outliers.txt",row.names=F,quote=F,sep="\t") ###311 variants
+```
+
+Ultimately we try models with 3 PC for structure correction and without structure correction. Remember, we only focused on the non-clonal dataset. We compute the p-value for Mahalanobis distance on the first 2 RDA axes (which are significant). Note that we could include more axes, but this may also incorporate more noise.
+
+We can then visualize adaptive gradients in the landscape. We can do this for RDA, LFMM, and RSB outliers.
+
+For example, for the RDA outliers obtained above, we can extract them from the plink file as follows:
+
+```{bash}
+
+cut -f1 RDA_outliers.txt | grep -v MRK | cut -f1 -d "_" | sort > outliers_rda2_snps.txt
+
+
+cut -f1,2 list_individuals_tokeep_selection.txt | sed "s:L0:L:" > list_no_clones.txt 
+
+##An issue with this dataset is the presence of many clonal individuals, usually from the same locality. 
+plink --bfile filtered_all --keep list_no_clones.txt --extract  outliers_rda2_snps.txt --geno 0 --make-bed --allow-extra-chr --double-id  --recode --out outliers_rda2
+
+plink --bfile outliers_rda2 --allow-extra-chr --double-id  --recodeA --out outliers_rda2
+plink --bfile outliers_rda2 --allow-extra-chr --double-id --recode --tab --out outliers_rda2
+
+
+```
+
+We can have a look at how variance at these loci aligns with latitude. It is a bit redundant with using the RDA loadings (see below), but we do not constrain anything and it is a bit easier to interpret:
+
+```{r}
+
+gen=read.PLINK("outliers_rda2.raw",map.file = "outliers_rda2.map") ##already imputed
+
+total=read.table("Env_data_RDA_no_clones.txt",h=T)
+
+total=subset(total,total$Individual  %in% gen@ind.names)
+total <- total %>%
+  mutate(Individual = factor(Individual, levels = gen@ind.names)) %>%
+  arrange(Individual)
+
+
+pca_imputed <- rda(gen, scale=T) # PCA in vegan uses the rda() call without any predictors
+screeplot(pca_imputed, type = "barplot", npcs=10, main="PCA Eigenvalues")
+PCs <- as.data.frame(scores(pca_imputed, choices=c(1:3), display="sites", scaling=0))
+PCs$Individual=row.names(PCs)
+coords=total[,c(1,2,3,4,11,12)]
+PCs=merge(PCs,coords,by="Individual")
+
+map.polygon <- getMap(resolution = "low")
+
+
+ggplot() +
+    # Plot the map
+    geom_path(data = map.polygon, aes(x = long, y = lat, group = group), color = "black", urban_PC1 = 1) +
+    
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = PCs, aes(x = lon, y = lat, fill = PC1.x), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+    
+    scale_fill_gradient2(low = "darkblue", high = "red") +  
+    xlim(-11, 55) + 
+    ylim(29, 55) +
+    coord_equal() + 
+    xlab("Longitude") +
+    ylab("Latitude") + 
+    theme_bw()
+
+
+
+
+
+
+# PCA scatter plot + variable loadings
+ggplot(PCs, aes(x = PC1.x, y = PC2.x)) +
+  geom_point(data = PCs,aes(x = PC1.x, y = PC2.x, fill=PC1.y),size = 5, shape = 21, color = "black") +
+  labs(title = "PCA Biplot with Loadings",
+       x = paste0("PC1 (", round(pca_var_exp[1], 1), "%)"),
+       y = paste0("PC2 (", round(pca_var_exp[2], 1), "%)")) +
+      scale_fill_gradient2(low = "darkblue", high = "red") +  
+
+  theme_minimal()
+
+
+
+
+
+# PCA scatter plot + variable loadings
+ggplot(PCs, aes(x = PC1.x, y = PC2.x)) +
+  geom_point(data = PCs,aes(x = PC1.x, y = PC2.x, fill=PC2.y),size = 5, shape = 21, color = "black") +
+  labs(title = "PCA Biplot with Loadings",
+       x = paste0("PC1 (", round(pca_var_exp[1], 1), "%)"),
+       y = paste0("PC2 (", round(pca_var_exp[2], 1), "%)")) +
+      scale_fill_gradient2(low = "darkblue", high = "red") +  
+
+  theme_minimal()
+
+
+```
+
+### Bonus, adaptability index in space.
+
+Now, in R we can have fun projecting adaptability indexes in space.
+
+Taken from Capblancq's Github:
+
+"The scores of the environmental variables along the RDA axes can be used to calculate a genetic-based index of adaptation for each environmental pixel of the landscape. This index is estimated independently for each RDA axis of interest using the formula:\
+$\sum_{i = 1}^{n}{a_ib_i}$ where *a* is the climatic variable score (loading) along the RDA axis, *b* is the standardized value for this particular variable at the focal pixel, and *i* refers to one of the *n* different variables used in the RDA model.
+
+Here we can clearly see that the RD2 axis correlates with latitude
+
+```{r}
+
+library(dplyr)
+library(vegan)
+library(adegenet)
+library(qvalue)
+library(robust)
+library(rnaturalearth)
+#library(robust,lib.loc = "./")
+
+#### Function to project the adaptive component turnover across the landscape
+adaptive_index <- function(RDA, K, env_pres, range = NULL, method = "loadings", scale_env, center_env){
+  
+  # Formatting environmental rasters for projection
+  var_env_proj_pres <- as.data.frame(rasterToPoints(env_pres[[row.names(RDA$CCA$biplot)]]))
+  
+  # Standardization of the environmental variables
+  var_env_proj_RDA <- as.data.frame(scale(var_env_proj_pres[,-c(1,2)], center_env[row.names(RDA$CCA$biplot)], scale_env[row.names(RDA$CCA$biplot)]))
+  
+  # Predicting pixels genetic component based on RDA axes
+  Proj_pres <- list()
+  if(method == "loadings"){
+    for(i in 1:K){
+      ras_pres <- rasterFromXYZ(data.frame(var_env_proj_pres[,c(1,2)], Z = as.vector(apply(var_env_proj_RDA[,names(RDA$CCA$biplot[,i])], 1, function(x) sum( x * RDA$CCA$biplot[,i])))), crs = crs(env_pres))
+      names(ras_pres) <- paste0("RDA_pres_", as.character(i))
+      Proj_pres[[i]] <- ras_pres
+      names(Proj_pres)[i] <- paste0("RDA", as.character(i))
+    }
+  }
+  
+  # Prediction with RDA model and linear combinations
+  if(method == "predict"){ 
+    pred <- predict(RDA, var_env_proj_RDA[,names(RDA$CCA$biplot[,i])], type = "lc")
+    for(i in 1:K){
+      ras_pres <- rasterFromXYZ(data.frame(var_env_proj_pres[,c(1,2)], Z = as.vector(pred[,i])), crs = crs(env_pres))
+      names(ras_pres) <- paste0("RDA_pres_", as.character(i))
+      Proj_pres[[i]] <- ras_pres
+      names(Proj_pres)[i] <- paste0("RDA", as.character(i))
+    }
+  }
+  
+  # Mask with the range if supplied
+  if(!is.null(range)){
+    Proj_pres <- lapply(Proj_pres, function(x) mask(x, range))
+  }
+  
+  # Returning projections for current climates for each RDA axis
+  return(Proj_pres = Proj_pres)
+}
+
+gen=read.PLINK("outliers_rda2.raw",map.file = "outliers_rda2.map") ##already imputed
+
+total=read.table("Env_data_RDA_no_clones.txt",h=T)
+
+total=subset(total,total$Individual  %in% gen@ind.names)
+total <- total %>%
+  mutate(Individual = factor(Individual, levels = gen@ind.names)) %>%
+  arrange(Individual)
+
+total[,c(11,13:ncol(total))] <- scale(total[,c(11,13:ncol(total))], center=TRUE, scale=TRUE) # center=TRUE, scale=TRUE are the defaults for scale() scale
+
+Env <- scale(total[,c(11,13:ncol(total))], center=TRUE, scale=TRUE) # center=TRUE, scale=TRUE are the defaults for scale() scale
+
+scale_env <- attr(Env, 'scaled:scale')
+center_env <- attr(Env, 'scaled:center')
+
+
+
+##Run RDA only on outliers, can be obtained with plink easily
+RDA_outliers <- rda(formula = gen ~ lat + env_PC1  + env_PC2 + env_PC3 + Condition(PC1 + PC2 + PC3), total, scale=F)
+
+summary(RDA_outliers) ###Nice constrained variance you got there...
+
+
+####Preparing a raster of environmental PCs and latitude.
+
+
+coords = read.table("Localities.txt",h=T) ##Corrected coordinates for Greece.
+pca=read.table("PCA_imputed_no_clones.txt")
+
+coords$Individual <- gsub("L0([1-9])", "L\\1", coords$seq_code)
+colnames(pca)=c("Individual",paste("PC",seq(1:(ncol(pca)-1)),sep=""))
+total=merge(pca,coords,by="Individual")
+total=subset(total,total$Individual!="L88")
+
+
+for (i in 1:19){
+bioclim <- terra::rast(paste("wc2.1_5m_bio/wc2.1_5m_bio_",i,".tif",sep=""))  ##Fairly low resolution, but should not matter too much at that scale
+points <- terra::vect(total[,c(12,11)], geom = c("lon", "lat"), crs = "EPSG:4326")
+
+# Extract Bioclim data, assigning nearest available value for missing points
+total[,12+i] <- terra::extract(bioclim, points, method = "bilinear")[,2]
+
+colnames(total)[12+i]=paste("bio",i,sep="")
+}
+
+
+
+pca_result <- prcomp(na.omit(total[,c(11,13:ncol(total))]), scale. = TRUE)
+summary(pca_result)  # See variance explained
+
+####We need the raster now. Then we need to project the points into the PCA of bioclim data obtained for the locations included in the analyses, and we create the 3 rasters corresponding to the 3 PC projections. Plus the latitude. Fun...
+
+ras <-stack(list.files("./wc2.1_5m_bio/", pattern = ".tif$", full.names = T))
+names(ras) <- gsub("_", "", unlist(strsplit(unlist(lapply(strsplit(list.files("./wc2.1_5m_bio", pattern = ".tif$", full.names = T), split = "./wc2.1_5m_bio/wc2.1_5m_"), function(x) x[2])), split = ".tif")))
+
+crop_extent <- extent(-20, 60, 25, 58)
+ras_cropped <- crop(ras, crop_extent)
+
+latitude_layer <- ras_cropped[[1]]
+
+# Replace cell values with their corresponding latitudes
+latitude_layer[] <- coordinates(latitude_layer)[, 2]
+
+# Assign a name to the new layer
+names(latitude_layer) <- "lat"
+
+ras_final <- addLayer(ras_cropped, latitude_layer)
+
+
+remove.NAs.stack<-function(rast.stack){
+  nom<-names(rast.stack)
+  test1<-calc(rast.stack, fun=sum)
+  test1[!is.na(test1)]<-1
+  test2<-rast.stack*test1
+  test2<-stack(test2)
+  names(test2)<-nom
+  return(test2)
+}
+ras_final <- remove.NAs.stack(ras_final)
+
+
+pca_proj <- predict(ras_final, pca_result, index = 1:3)  # Project first 3 PCs
+
+# pca_proj is a RasterStack with layers for PC1, PC2, PC3
+names(pca_proj) <- c("env_PC1", "env_PC2", "env_PC3")
+#writeRaster(pca_proj, filename = "pca_bioclim_projection.tif", format = "GTiff", overwrite = TRUE)
+pca_proj_final <- addLayer(pca_proj, latitude_layer)
+
+
+## Running the function for all the climatic pixels of lodgepole pine distribution range
+res_RDA_proj_current <- adaptive_index(RDA = RDA_outliers, K = 2, env_pres = pca_proj_final, range = NULL, method = "loadings", scale_env = scale_env, center_env = center_env)
+
+
+
+## Vectorization of the climatic rasters for ggplot
+RDA_proj <- list(res_RDA_proj_current$RDA1, res_RDA_proj_current$RDA2)
+RDA_proj <- lapply(RDA_proj, function(x) rasterToPoints(x))
+for(i in 1:length(RDA_proj)){
+  RDA_proj[[i]][,3] <- (RDA_proj[[i]][,3]-min(RDA_proj[[i]][,3]))/(max(RDA_proj[[i]][,3])-min(RDA_proj[[i]][,3]))
+}
+
+## Adaptive genetic turnover projected across lodgepole pine range for RDA1 and RDA2 indexes
+TAB_RDA <- as.data.frame(do.call(rbind, RDA_proj[1:2]))
+colnames(TAB_RDA)[3] <- "value"
+TAB_RDA$variable <- factor(c(rep("RDA1", nrow(RDA_proj[[1]])), rep("RDA2", nrow(RDA_proj[[2]]))), levels = c("RDA1","RDA2"))
+admin <- ne_countries(scale = "medium", returnclass = "sf")
+
+ggplot(data = TAB_RDA) + 
+  geom_sf(data = admin, fill=gray(.9), size=0) +
+  geom_raster(aes(x = x, y = y, fill = cut(value, breaks=seq(0, 1, length.out=10), include.lowest = T))) + 
+  scale_fill_viridis_d(urban_PC1 = 0.8, direction = -1, option = "A", labels = c("Negative scores","","","","Intermediate scores","","","","Positive scores")) +
+  geom_sf(data = admin, fill=NA, size=0.1) +
+  coord_sf(xlim = c(-20, 60), ylim = c(25, 58), expand = FALSE) +
+  xlab("Longitude") + ylab("Latitude") +
+  guides(fill=guide_legend(title="Adaptive index")) +
+  facet_grid(~ variable) +
+  theme_bw(base_size = 11, base_family = "Times") +
+  theme(panel.grid = element_blank(), plot.background = element_blank(), panel.background = element_blank(), strip.text = element_text(size=11))
+
+
+crop_extent <- extent(-20, 60, 25, 58)
+
+```
+
+## LFMM2
+
+```{r}
+
+library(data.table)
+
+Y <- as.matrix(fread("filtered.lfmm"))  # or however you're loading it
+snp_chunks <- lapply(1:50, function(start) Y[, seq(start, ncol(Y), by = 50)])
+
+dir.create("lfmm_chunks")
+for (i in 1:50) {
+  fwrite(as.data.frame(snp_chunks[[i]]), file = paste0("lfmm_chunks/chunk_", i, ".lfmm"), sep = "\t")
+}
+
+
+
+args <- commandArgs(trailingOnly = TRUE)
+chunk_id <- as.integer(args[1])
+Y <- as.matrix(fread(paste0("lfmm_chunks/chunk_", chunk_id, ".lfmm")))
+
+library(LEA)
+library(data.table)
+
+X <- readRDS("env_matrix.rds")  # assumed pre-scaled, saved once
+K <- 3  # or parameterized per chunk
+
+mod <- lfmm2(input = Y, env = X, K = K)
+
+saveRDS(mod, file = paste0("results/mod_lfmm_chunk_", chunk_id, ".rds"))
+
+library(LEA)
+library(adegenet)
+library(dplyr)
+library(data.table)
+###First convert the genlight object into a LEA object
+ped2lfmm("filtered_small.ped") ##to be changed to take the entire dataset
+Y=as.data.frame(fread("filtered_small.lfmm"))
+
+gen=read.PLINK("filtered_small.raw",map.file = "filtered_small.map") ##already imputed
+
+total=read.table("Env_data_RDA.txt",h=T)
+total=subset(total,total$Individual  %in% gen@ind.names)
+total <- total %>%
+  mutate(Individual = factor(Individual, levels = gen@ind.names)) %>%
+  arrange(Individual)
+
+# # center and scale. Mostly to keep things consistent with previous pipeline.
+X <- scale(total[,26:50], center=TRUE, scale=TRUE)
+colnames(X)[which(colnames(X)=="urban_PC1")]="urban_PC1"
+
+mod.lfmm2.K3.all <- lfmm2(input = Y, env = X[,c(which(colnames(X)=="urban_PC1"),which(colnames(X)=="canopy_cover"),which(colnames(X)=="nightlight"),which(colnames(X)=="per_impervious"),which(colnames(X)=="env_PC1"),which(colnames(X)=="env_PC2"),which(colnames(X)=="env_PC3"))], K = 3)
+
+mod.lfmm2.K3.PC <- lfmm2(input = Y, env = X[,c(which(colnames(X)=="urban_PC1"),which(colnames(X)=="env_PC1"),which(colnames(X)=="env_PC2"),which(colnames(X)=="env_PC3"))], K = 3)
+
+
+pv <- lfmm2.test(object = mod.lfmm2.K3.PC,
+input = Y,
+env = X[,c(which(colnames(X)=="urban_PC1"),which(colnames(X)=="env_PC1"),which(colnames(X)=="env_PC2"),which(colnames(X)=="env_PC3"))],
+full = TRUE) ###Will produce a unique P-value for association with the whole set of independent environmental variables
+
+pv_1 <- lfmm2.test(object = mod.lfmm2.K3.all,
+input = Y,
+env = X[,which(colnames(X)=="urban_PC1")],
+full = FALSE) ###Will produce one P-value for association with each environmental variable, we include more than above to test.
+
+
+pv_2 <- lfmm2.test(object = mod.lfmm2.K3.all,
+input = Y,
+env = X[,which(colnames(X)=="canopy_cover")],
+full = FALSE) ###Will produce one P-value for association with each environmental variable, we include more than above to test.
+
+pv_3 <- lfmm2.test(object = mod.lfmm2.K3.all,
+input = Y,
+env = X[,which(colnames(X)=="nightlight")],
+full = FALSE) ###Will produce one P-value for association with each environmental variable, we include more than above to test.
+
+
+pv_4 <- lfmm2.test(object = mod.lfmm2.K3.all,
+input = Y,
+env = X[,which(colnames(X)=="per_impervious")],
+full = FALSE) ###Will produce one P-value for association with each environmental variable, we include more than above to test.
+
+pv_5 <- lfmm2.test(object = mod.lfmm2.K3.all,
+input = Y,
+env = X[,which(colnames(X)=="env_PC1")],
+full = FALSE) ###Will produce one P-value for association with each environmental variable, we include more than above to test.
+
+pv_6 <- lfmm2.test(object = mod.lfmm2.K3.all,
+input = Y,
+env = X[,which(colnames(X)=="env_PC2")],
+full = FALSE) ###Will produce one P-value for association with each environmental variable, we include more than above to test.
+
+pv_7 <- lfmm2.test(object = mod.lfmm2.K3.all,
+input = Y,
+env = X[,which(colnames(X)=="env_PC3")],
+full = FALSE) ###Will produce one P-value for association with each environmental variable, we include more than above to test.
+
+positions=as.data.frame(fread("filtered_small.map"))[,c(1,4)]
+
+All_results=as.data.frame(cbind(gen@loc.names,positions,
+pv_1$pvalues,
+pv_2$pvalues,
+pv_3$pvalues,
+pv_4$pvalues,
+pv_5$pvalues,
+pv_6$pvalues,
+pv_7$pvalues,
+pv$pvalues,
+pv_1$zscores,
+pv_2$zscores,
+pv_3$zscores,
+pv_4$zscores,
+pv_5$zscores,
+pv_6$zscores,
+pv_7$zscores))
+colnames(All_results)[1]="MRK"
+colnames(All_results)[2]="CHR"
+colnames(All_results)[3]="POSITION"
+colnames(All_results)[4:10]=c("urban_PC1","canopy_cover","nightlight","per_impervious","env_PC1","env_PC2","env_PC3")
+colnames(All_results)[11]="P_val_combined"
+colnames(All_results)[12:18]=paste("zscore_",c("urban_PC1","canopy_cover","nightlight","per_impervious","env_PC1","env_PC2","env_PC3"),sep="")
+
+                                                                                                                                                                                              
+write.table(All_results,file="LFMM_scan_K3_small.txt",row.names = F,quote=F,sep="\t")
+
+
+test=subset(All_results,All_results$CHR==2)
+plot(test$POSITION,-log10(test$P_val_combined),xlim=c(23.5e6,25.5e6))
+abline(v=24750000)
+
+
+
+test=subset(All_results,All_results$CHR==4)
+plot(test$POSITION,-log10(test$P_val_combined),xlim=c(121.5e6,123.5e6))
+abline(v=122750000)
+
+
+
+truc=subset(All_results,All_results$CHR<7)
+ggplot(truc, aes(x = POSITION, y = -log10(urban_PC1), color = CHR)) +
+  geom_point() + # Points on the line
+  facet_wrap(~CHR) +  # Separate chromosomes
+  labs(title = "Manhattan Plot of Partial RDA results",
+       x = "Genomic Position",
+       y = "Z-score for RDA1 (urban-country axis)") +
+  #scale_color_manual(values = rep(c("black", "blue"),14)) +
+  theme_minimal() +  theme(legend.position = "none")  # Remove legend for clarity
+
+
+```
+
+```{bash}
+ for i in {1..50}; do sed -n '1d' LFMM_scan_K3_${i}.txt >> LFMM_scan_K3_parallel.txt;done
+head -n1 LFMM_scan_K3_1.txt > header
+sort -k2,2 -k3,3n  LFMM_scan_K3_parallel.txt | cat header - > LFMM_scan_K3_parallel.txt2;mv LFMM_scan_K3_parallel.txt2 LFMM_scan_K3_parallel.txt
+gzip LFMM_scan_K3_parallel.txt
+```
+
+Another way to parallelize:
+
+```{r}
+library(LEA)
+library(adegenet)
+library(dplyr)
+library(data.table)
+###First convert the genlight object into a LEA object
+#ped2lfmm("filtered_small.ped") ##to be changed to take the entire dataset
+
+args <- commandArgs(trailingOnly = TRUE)
+analysis_id <- as.integer(args[1])
+#Y <- as.matrix(fread(paste0("lfmm_chunks/chunk_", chunk_id, ".lfmm")))
+
+Y=as.data.frame(fread("filtered.lfmm"))
+#Y=as.data.frame(fread(paste0("lfmm_chunks/chunk_", chunk_id, ".lfmm")))
+
+gen=read.PLINK("filtered.raw",map.file = "filtered.map") ##already imputed
+
+total=read.table("Env_data_RDA.txt",h=T)
+total=subset(total,total$Individual  %in% gen@ind.names)
+total <- total %>%
+  mutate(Individual = factor(Individual, levels = gen@ind.names)) %>%
+  arrange(Individual)
+
+# # center and scale. Mostly to keep things consistent with previous pipeline.
+X <- scale(total[,26:50], center=TRUE, scale=TRUE)
+
+positions=as.data.frame(fread("filtered.map"))[,c(1,4)]
+variables=c("urban_PC1","canopy_cover","nightlight","per_impervious","env_PC1","env_PC2","env_PC3")
+
+###Multivariate test
+if (analysis_id==8){
+mod.lfmm2.K3.PC <- lfmm2(input = Y, env = X[,c(which(colnames(X)=="urban_PC1"),which(colnames(X)=="env_PC1"),which(colnames(X)=="env_PC2"),which(colnames(X)=="env_PC3"))], K = 3)
+
+
+pv <- lfmm2.test(object = mod.lfmm2.K3.PC,
+input = Y,
+env = X[,c(which(colnames(X)=="urban_PC1"),which(colnames(X)=="env_PC1"),which(colnames(X)=="env_PC2"),which(colnames(X)=="env_PC3"))],
+full = TRUE) ###Will produce a unique P-value for association with the whole set of independent environmental variables
+
+
+All_results=as.data.frame(cbind(gen@loc.names,positions,pv$pvalues))
+colnames(All_results)[1]="MRK"
+colnames(All_results)[2]="CHR"
+colnames(All_results)[3]="POSITION"
+colnames(All_results)[4]="P_val_combined"
+write.table(All_results,file="LFMM_scan_K3_multinomial.txt",row.names = F,quote=F,sep="\t")
+} else {
+mod.lfmm2.K3.all <- lfmm2(input = Y, env = X[,which(colnames(X)==variables[analysis_id])], K = 3)
+###Univariate test
+
+pv_1 <- lfmm2.test(object = mod.lfmm2.K3.all,
+input = Y,
+env = X[,which(colnames(X)==variables[analysis_id])],
+full = FALSE) ###Will produce one P-value for association with each environmental variable, we include more than above to test.
+All_results=as.data.frame(cbind(gen@loc.names,positions,pv_1$pvalues,pv_1$zscores))
+colnames(All_results)[1]="MRK"
+colnames(All_results)[2]="CHR"
+colnames(All_results)[3]="POSITION"
+colnames(All_results)[4]=variables[analysis_id]
+colnames(All_results)[5]=paste("zscore_",variables[analysis_id],sep="")
+write.table(All_results,file=paste("LFMM_scan_K3_",variables[analysis_id],".txt",sep=""),row.names = F,quote=F,sep="\t")
+}
+
+```
+
+We can prepare the input file that is compatible with WZA.
+
+```{bash}
+##combine outputs
+paste LFMM_scan_K3_multinomial.txt \
+<(cut -f4,5 LFMM_scan_K3_canopy_cover.txt) \
+<(cut -f4,5 LFMM_scan_K3_env_PC1.txt) \
+<(cut -f4,5 LFMM_scan_K3_env_PC2.txt) \
+<(cut -f4,5 LFMM_scan_K3_env_PC3.txt) \
+<(cut -f4,5 LFMM_scan_K3_nightlight.txt) \
+<(cut -f4,5 LFMM_scan_K3_per_impervious.txt) \
+<(cut -f4,5 LFMM_scan_K3_urban_PC1.txt) <(awk '{print $5}' filtered.frq) | awk '{window=int($3/50000)*50000; print $0 "\t" $2 "_" window}' | cut -f2- > LFMM_scan_K3_total.txt
+gzip LFMM_scan_K3_total.txt
+
+```
+
+```{r}
+library(data.table)
+library(ggplot2)
+
+
+
+
+
+test=subset(All_results,All_results$CHR==2)
+plot(test$POSITION,-log10(test$P_val_combined),xlim=c(23.5e6,25.5e6))
+abline(v=24750000)
+
+
+
+test=subset(All_results,All_results$CHR==4)
+plot(test$POSITION,-log10(test$P_val_combined),xlim=c(121.5e6,123.5e6))
+abline(v=122750000)
+
+
+
+truc=subset(All_results,All_results$CHR<7 & All_results$P_val_combined <0.05)
+ggplot(truc, aes(x = POSITION, y = -log10(P_val_combined), color = CHR)) +
+  geom_point() + # Points on the line
+  facet_wrap(~CHR) +  # Separate chromosomes
+  labs(title = "Manhattan Plot of LFMM2 results",
+       x = "Genomic Position",
+       y = "P-value for multinomial test") +
+  #scale_color_manual(values = rep(c("black", "blue"),14)) +
+  theme_minimal() +  theme(legend.position = "none")  # Remove legend for clarity
+
+```
+
+###Script for start of Figure 5 Now, we prepare Figure 5. Let's examine different sets of candidate genes identified in other studies on urbanization or based on GO terms (list of GO terms in list file, identified through a search in AMIGO)
+
+```{r}
+
+#Find overlap
+library(GenomicRanges)
+library(IRanges)
+library(data.table)
+library(regioneR)
+library(ggpubr)
+library(biomaRt)
+library(dplyr)
+
+#ensembl <- useMart("ensembl")
+#listDatasets(ensembl)
+ensembl <- useMart("ensembl",host="https://may2024.archive.ensembl.org", dataset = "acarolinensis_gene_ensembl")  
+library(GOfuncR)
+getBM(mart=ensembl,
+      attributes=c('ensembl_gene_id','external_gene_name', 'go_id', 'name_1006'),
+      filters="external_gene_name",
+      values="Tl")
+anno <- getBM(mart=ensembl,attributes=c("ensembl_gene_id", "external_gene_name", "go_id", "chromosome_name", "start_position", "end_position", "strand", "description"))
+
+go_annot=anno[,c(1,3)]
+colnames(go_annot)=c("gene","go_id")
+custom_coords=anno[,c(1,4,5,6)]
+custom_coords$chromosome_name=gsub('.1','',custom_coords$chromosome_name)
+colnames(custom_coords)=c("gene","chr","start","end")
+
+
+###Look at FST, PBS, diversity in these candidate genes. 50kb resolution, look at shorter windows
+Locomotion=read.table("Selection_tests/LimbLocomotion_GOterms_list",sep="\t")
+Behavior=read.table("Selection_tests/Behavir_GOterms_list",sep="\t")
+Immunity=read.table("Selection_tests/Immune_GOterms_list",sep="\t")
+Heat=read.table("Selection_tests/Heat_GOterms_list",sep="\t")
+
+list_Locomotion=subset(go_annot,go_annot$go_id %in% Locomotion$V1)
+list_Behavior=subset(go_annot,go_annot$go_id %in% Behavior$V1)
+list_Immunity=subset(go_annot,go_annot$go_id %in% Immunity$V1)
+list_Heat=subset(go_annot,go_annot$go_id %in% Heat$V1)
+
+list_candidates_cristatellus_extended=read.table("Selection_tests/list_all_genes_morpho_urban_cristatellus")
+list_candidates_cristatellus=read.table("Selection_tests/list_core_genes_cristatellus")
+
+
+custom_coords=unique(custom_coords)
+
+custom_coords$category_immune=ifelse(custom_coords$gene%in%list_Immunity$gene,1,0)
+custom_coords$category_behaviour=ifelse(custom_coords$gene%in%list_Behavior$gene,1,0)
+custom_coords$category_locomotion=ifelse(custom_coords$gene%in%list_Locomotion$gene,1,0)
+custom_coords$category_heat=ifelse(custom_coords$gene%in%list_Heat$gene,1,0)
+custom_coords$category_extended_cristal=ifelse(custom_coords$gene%in%list_candidates_cristatellus_extended$V1,1,0)
+custom_coords$category_strict_cristal=ifelse(custom_coords$gene%in%list_candidates_cristatellus$V1,1,0)
+
+
+
+custom_coords=GRanges(custom_coords)
+
+###Generating background and candidate windows
+background=subset(custom_coords,custom_coords$category_immune+ custom_coords$category_behaviour+custom_coords$category_locomotion +custom_coords$category_extended_cristal +custom_coords$category_strict_cristal==0)
+immune=subset(custom_coords,custom_coords$category_immune==1)
+behav=subset(custom_coords,custom_coords$category_behaviour==1)
+heat=subset(custom_coords,custom_coords$category_heat==1)
+locom=subset(custom_coords,custom_coords$category_locomotion==1)
+extended=subset(custom_coords,custom_coords$category_extended_cristal==1)
+narrow=subset(custom_coords,custom_coords$category_strict_cristal==1)
+
+
+sumstats_1=as.data.frame(fread("Selection_tests/All_results_50kb_FST_PBS_ANGSD_countryside.txt",h=T))
+sumstats_2=as.data.frame(fread("Selection_tests/urban_nucdiv_50kb.txt",h=F))
+sumstats_3=as.data.frame(fread("Selection_tests/countryside_nucdiv_50kb.txt",h=F))
+sumstats_4=as.data.frame(fread("Selection_tests/FastPCA_results.txt",h=F))
+
+colnames(sumstats_2)=c("index","chr","WinCenter",	"tW",	"tP"	,"tF",	"tH",	"tL",	"Tajima",	"fuf",	"fud",	"fayh",	"zeng",	"nSites")
+colnames(sumstats_3)=c("index","chr","WinCenter",	"tW",	"tP"	,"tF",	"tH",	"tL",	"Tajima",	"fuf",	"fud",	"fayh",	"zeng",	"nSites")
+colnames(sumstats_4)=c("chr","start","end","P")
+
+##sed -i -e "s:chrLG::" *input_*.txt
+##sed -i -e "s:chrUn_::" *input_*.txt
+##sed -i -e "s:chr::" *input_*.txt
+
+
+sumstats_1$start=sumstats_1$midPos-25000
+sumstats_1$end=sumstats_1$midPos+25000
+sumstats_1$chr <- gsub("chrLG", "", sumstats_1$chr)
+sumstats_1$chr <- gsub("chrUn_", "", sumstats_1$chr)
+sumstats_1$chr <- gsub("chr", "", sumstats_1$chr)
+sumstats_1=GRanges(sumstats_1)
+
+overlaps <- findOverlaps(background, sumstats_1)
+df_background=as.data.frame(sumstats_1[subjectHits(overlaps)])
+df_background$category="Background"
+
+overlaps <- findOverlaps(immune, sumstats_1)
+df_immune=as.data.frame(sumstats_1[subjectHits(overlaps)])
+df_immune$category="Immunity"
+
+overlaps <- findOverlaps(behav, sumstats_1)
+df_behav=as.data.frame(sumstats_1[subjectHits(overlaps)])
+df_behav$category="Behaviour"
+
+overlaps <- findOverlaps(locom, sumstats_1)
+df_locom=as.data.frame(sumstats_1[subjectHits(overlaps)])
+df_locom$category="Locomotion"
+
+overlaps <- findOverlaps(heat, sumstats_1)
+df_heat=as.data.frame(sumstats_1[subjectHits(overlaps)])
+df_heat$category="Heat response"
+
+overlaps <- findOverlaps(extended, sumstats_1)
+df_extended=as.data.frame(sumstats_1[subjectHits(overlaps)])
+df_extended$category="GWAS Winchell"
+
+overlaps <- findOverlaps(narrow, sumstats_1)
+df_narrow=as.data.frame(sumstats_1[subjectHits(overlaps)])
+df_narrow$category="GEA Winchell"
+
+df_narrow=unique(df_narrow)
+df_extended=unique(df_extended)
+df_heat=unique(df_heat)
+df_locom=unique(df_locom)
+df_behav=unique(df_behav)
+df_background=unique(df_background)
+df_immune=unique(df_immune)
+
+df=rbind(df_background,df_immune,df_behav,df_locom,df_heat,df_extended,df_narrow)
+
+df$category <- factor(df$category, levels = c("Background"  ,      "Behaviour", "Heat response","Immunity" ,"Locomotion"  , "GWAS Winchell", "GEA Winchell"))
+
+####Permutation test with chromosome circularization to test for significant differences in FST, pi, etc.
+## median_FST=median(df_extended$Fst12)
+## genome=reduce(sumstats_1,min.gapwidth=1000000000)
+## for (i in 1:1000){
+## A=GRanges(df_extended)
+## perm=circularRandomizeRegions(A, genome=genome, max.retries=10,per.chromosome=TRUE)
+## overlaps_perm <- findOverlaps(perm, sumstats_1)
+## df_extended_perm=unique(as.data.frame(sumstats_1[subjectHits(overlaps_perm)]))
+## median_FST=c(median_FST,median(df_extended_perm$Fst12))
+## }
+## pval_FST=length(subset(median_FST[-1],median_FST[-1]>median_FST[1]))/length(median_FST[-1])
+```
+
+We can also generate a Manhattan plot of the whole genome FST, and highlight the candidate regions we identified naively, as well as the few candidate genes/regions identified by Winchell.
+
+```{r}
+# Load required libraries
+library(ggplot2)
+library(ggrastr)
+library(qvalue)
+library(tidyr)
+library(dplyr)
+library(data.table)
+
+gea_data=as.data.frame(fread("LFMM_scan_K3_total.txt"))
+pval=colnames(gea_data)[c(3,4,6,8,10,12,14,16)]
+
+gea_data$CHR <- gsub("chrLG", "", gea_data$CHR)
+gea_data$CHR <- gsub("chrUn_", "", gea_data$CHR)
+gea_data$CHR <- gsub("chr", "", gea_data$CHR)
+
+gea_long <- gea_data %>%
+  pivot_longer(cols = all_of(pval),
+               names_to = "Test",
+               values_to = "pval")
+
+gea_long <- gea_long %>%
+  group_by(Test) %>%
+  mutate(qval = qvalue(pval)$qvalues) %>%
+  ungroup()
+
+gea_long <- gea_long %>%
+  group_by(Test) %>%
+  mutate(adj_P = p.adjust(pval, method="BH")) %>%
+  ungroup()
+
+ggplot(gea_long, aes(x = pval, color = factor(Test))) +
+  geom_histogram(bin_width=0.1) + facet_grid(Test ~ .)
+
+ 
+
+
+gea_data=subset(gea_long,gea_long$pval<0.01)
+
+gea_data$CHR <- gsub("chrLG", "", gea_data$CHR)
+gea_data$CHR <- gsub("chrUn_", "", gea_data$CHR)
+gea_data$CHR <- gsub("chr", "", gea_data$CHR)
+
+setDT(gea_data)
+
+intervals_of_interest <- df_narrow
+colnames(intervals_of_interest)[1]="chr"
+# Mark the intervals of interest
+
+setDT(intervals_of_interest)
+
+# Add key columns
+setkey(intervals_of_interest, chr, start, end)
+setkey(gea_data, CHR, POSITION, POSITION)
+# Use non-equi join
+gea_data[, highlight := "no"]
+matches <- foverlaps(gea_data[, .(CHR, POSITION, POS_END = POSITION)], 
+                     intervals_of_interest[, .(chr, start, end)],
+                     by.x = c("CHR", "POSITION", "POS_END"),
+                     by.y = c("chr", "start", "end"),
+                     nomatch = 0L)
+
+# Set highlight to "yes" for matching rows
+gea_data[matches, highlight := "yes", on = .(CHR, POSITION)]
+
+chr=c("4","2")
+start=c(121495000,23410000)
+end=c(123655000,25660000)
+intervals_of_interest=as.data.frame(cbind(chr,start,end))
+
+intervals_of_interest$chr=as.factor(intervals_of_interest$chr)
+intervals_of_interest$start=as.integer(intervals_of_interest$start)
+intervals_of_interest$end=as.integer(intervals_of_interest$end)
+
+
+setDT(intervals_of_interest)
+
+# Add key columns
+setkey(intervals_of_interest, chr, start, end)
+setkey(gea_data, CHR, POSITION, POSITION)
+
+# Use non-equi join
+gea_data[, highlight2 := "no"]
+matches <- foverlaps(gea_data[, .(CHR, POSITION, POS_END = POSITION)], 
+                     intervals_of_interest[, .(chr, start, end)],
+                     by.x = c("CHR", "POSITION", "POS_END"),
+                     by.y = c("chr", "start", "end"),
+                     nomatch = 0L)
+
+# Set highlight2 to "yes" for matching rows
+gea_data[matches, highlight2 := "yes", on = .(CHR, POSITION)]
+
+
+
+
+
+intervals_of_interest <- df_extended
+colnames(intervals_of_interest)[1]="chr"
+# Mark the intervals of interest
+
+setDT(intervals_of_interest)
+
+# Add key columns
+setkey(intervals_of_interest, chr, start, end)
+setkey(gea_data, CHR, POSITION, POSITION)
+
+# Use non-equi join
+gea_data[, highlight3 := "no"]
+matches <- foverlaps(gea_data[, .(CHR, POSITION, POS_END = POSITION)], 
+                     intervals_of_interest[, .(chr, start, end)],
+                     by.x = c("CHR", "POSITION", "POS_END"),
+                     by.y = c("chr", "start", "end"),
+                     nomatch = 0L)
+
+# Set highlight3 to "yes" for matching rows
+gea_data[matches, highlight3 := "yes", on = .(CHR, POSITION)]
+
+
+
+intervals_of_interest <- df_behav
+colnames(intervals_of_interest)[1]="chr"
+
+setDT(intervals_of_interest)
+
+# Add key columns
+setkey(intervals_of_interest, chr, start, end)
+setkey(gea_data, CHR, POSITION, POSITION)
+
+# Use non-equi join
+gea_data[, highlight4 := "no"]
+matches <- foverlaps(gea_data[, .(CHR, POSITION, POS_END = POSITION)], 
+                     intervals_of_interest[, .(chr, start, end)],
+                     by.x = c("CHR", "POSITION", "POS_END"),
+                     by.y = c("chr", "start", "end"),
+                     nomatch = 0L)
+
+# Set highlight4 to "yes" for matching rows
+gea_data[matches, highlight4 := "yes", on = .(CHR, POSITION)]
+
+
+
+
+gea_data=subset(gea_data,(gea_data$CHR>0 & gea_data$CHR<7))
+
+
+# Reshape gea_data to long format
+desired_order <- c("P_val_combined", "env_PC1", "env_PC2", "env_PC3",
+                   "urban_PC1", "canopy_cover", "nightlight", "per_impervious")
+
+gea_data$Test <- factor(gea_data$Test, levels = desired_order)
+
+
+pdf(file="GEA_Manhattan_pvalues.pdf",width=15,height=25)
+ggplot(gea_data, aes(x = POSITION, y = -log10(adj_P), color = factor(CHR))) +
+    geom_point_rast(size = 0.8) +
+    scale_color_manual(values = rep(c("darkgrey", "black"), 16)) +
+    geom_point_rast(data = subset(gea_data, 
+                                  highlight == "yes"),
+                    aes(x = POSITION, y = -log10(adj_P)), color = "darkgreen", size = 1.5) +
+    geom_point_rast(data = subset(gea_data, highlight2 == "yes"),
+                    aes(x = POSITION, y = -log10(adj_P)), color = "red", size = 1.5) +
+    geom_point_rast(data = subset(gea_data, highlight3 == "yes"),
+                    aes(x = POSITION, y = -log10(adj_P)), color = "darkorange", size = 1.5) +
+#    geom_point_rast(data = subset(gea_data, highlight4 == "yes"),
+#                    aes(x = POSITION, y = -log10(adj_P)), color = "lightblue", size = 1.5) +
+    facet_grid(Test ~ CHR, scales = "free_y") +
+    theme_minimal() +
+    labs(x = "Genomic Position", y = "-log10(B-H adjusted p-value)", title = "Manhattan Plots by Test and Chromosome") +
+    theme(legend.position = "none")
+dev.off()
+
+
+
+```
+
+###Testing overlap between our study, scan for selection, and Winchell's study
+
+We can then take candidate SNPs which pass the 1% Benjamini-Hochberg corrected P-value threshold. First, we look at whether these candidates fall in regions of higher PBS/Fst.
+
+```{r}
+#Find overlap
+library(GenomicRanges)
+library(IRanges)
+library(data.table)
+library(regioneR)
+library(ggpubr)
+library(biomaRt)
+library(dplyr)
+
+gea_long$outlier=ifelse(gea_long$adj_P<=0.01,paste("outlier",gea_long$Test,sep="_"),"neutral")
+table(gea_long$outlier)
+
+###make a Figure of PBS/Fst in windows overlapping an outlier
+
+
+sumstats_1=as.data.frame(fread("Selection_tests/All_results_50kb_FST_PBS_ANGSD_countryside.txt",h=T))
+sumstats_1$start=sumstats_1$midPos-25000
+sumstats_1$end=sumstats_1$midPos+25000
+sumstats_1$chr <- gsub("chrLG", "", sumstats_1$chr)
+sumstats_1$chr <- gsub("chrUn_", "", sumstats_1$chr)
+sumstats_1$chr <- gsub("chr", "", sumstats_1$chr)
+sumstats_1=GRanges(sumstats_1)
+
+names(table(gea_long$outlier))
+#
+  
+outliers=subset(gea_long,gea_long$outlier != "neutral")
+outliers$start=outliers$POSITION-1
+outliers$end=outliers$POSITION
+
+outliers=GRanges(outliers)
+overlaps <- findOverlaps(outliers, sumstats_1)
+fst_windows_outlier=as.data.frame(sumstats_1[subjectHits(overlaps)])
+fst_windows_outlier$outlier_type <- outliers$outlier[queryHits(overlaps)]
+fst_windows_outlier=unique(fst_windows_outlier)
+# Indices of overlapping windows
+overlap_indices <- subjectHits(overlaps)
+# Logical vector of non-overlaps
+non_overlap_indices <- setdiff(seq_along(sumstats_1), overlap_indices)
+# Extract non-overlapping windows
+fst_windows_non_outlier <- as.data.frame(sumstats_1[non_overlap_indices])
+fst_windows_non_outlier$outlier_type="Background"
+
+fst_windows=rbind(fst_windows_outlier,fst_windows_non_outlier)
+boxplot(fst_windows_outlier$Fst12 ~ fst_windows_outlier$outlier_type)
+boxplot(fst_windows_outlier$PBS2 ~  fst_windows_outlier$outlier_type)
+
+desired_order <- c("Background", "outlier_P_val_combined" , "outlier_env_PC1" ,     "outlier_env_PC2"  ,      "outlier_env_PC3"  ,"outlier_urban_PC1"  ,"outlier_canopy_cover"   ,  "outlier_nightlight"    , "outlier_per_impervious" )
+
+fst_windows$outlier_type <- factor(fst_windows$outlier_type, levels = desired_order)
+
+pdf(file="Fst_PBS_GEA_outliers.pdf",width=14,height=12)
+
+ggplot(fst_windows, aes(x = outlier_type , y = Fst12)) +
+  geom_violin(fill="lightgrey") +
+  geom_boxplot(width = 0.1, outlier.shape = NA) +
+  theme_minimal() +
+  labs(title = "Differentiation between urban and non-urban anoles (LA)", x = "LFMM2 outlier test", y = "Fst")
+
+
+
+ggplot(fst_windows, aes(x = outlier_type , y = PBS2)) +
+  geom_violin(fill="lightgrey") +
+  geom_boxplot(width = 0.1, outlier.shape = NA) +
+  theme_minimal() +
+  labs(title = "Population-Branch-Statistic", x = "LFMM2 outlier test", y = "PBS test (urban v. others)")
+dev.off()
+
+### Upset plot for the GEA results and comparison with Winchell.
+##We already have the Granges with gene coordinates custom_coords=GRanges(custom_coords)
+
+outliers=subset(gea_long,gea_long$outlier != "neutral")
+outliers$start=outliers$POSITION-50000  ###to make it similar to Fst window-based approach
+outliers$end=outliers$POSITION+50000
+outliers=GRanges(outliers)
+
+overlaps <- findOverlaps(outliers,custom_coords)
+genes_outlier=custom_coords[subjectHits(overlaps)]
+genes_outlier$outlier_type <- outliers$outlier[queryHits(overlaps)]
+genes_outlier=unique(as.data.frame(genes_outlier,row.names=seq(1,length(genes_outlier@ranges) )))
+
+# Indices of overlapping windows
+overlap_indices <- subjectHits(overlaps)
+# Logical vector of non-overlaps
+non_overlap_indices <- setdiff(seq_along(custom_coords), overlap_indices)
+# Extract non-overlapping windows
+genes_non_outlier <- as.data.frame(custom_coords[non_overlap_indices])
+genes_non_outlier$outlier_type="Background"
+
+genes=rbind(genes_outlier,genes_non_outlier)
+length(unique(subset(genes,genes$category_strict_cristal==1 & genes$outlier_type !="Background")$gene))
+###6 genes identified over 33.
+
+length(unique(subset(genes,genes$category_strict_cristal==1 & genes$outlier_type =="outlier_urban_PC1")$gene))
+#1 gene
+
+genes_outlier$category_Fst_extreme=ifelse(genes_outlier$gene %in% c("ENSACAG00000016065","ENSACAG00000013324","ENSACAG00000013384"),1,0)
+all_candidates=subset(genes_outlier,rowSums(genes_outlier[,c(7:12,14)])>0)
+table(all_candidates$category_immune,all_candidates$outlier_type)
+table(all_candidates$category_behaviour,all_candidates$outlier_type)
+table(all_candidates$category_locomotion,all_candidates$outlier_type)
+table(all_candidates$category_heat,all_candidates$outlier_type)
+table(all_candidates$category_extended_cristal,all_candidates$outlier_type)
+table(all_candidates$category_strict_cristal,all_candidates$outlier_type)
+
+
+
+urban_candidates=subset(genes_outlier,rowSums(genes_outlier[,c(7:12,14)])>0 & genes_outlier$outlier_type %in% c("outlier_urban_PC1"  ,"outlier_canopy_cover"   ,  "outlier_nightlight"    , "outlier_per_impervious" ))
+table(urban_candidates$category_immune,urban_candidates$outlier_type)
+table(urban_candidates$category_behaviour,urban_candidates$outlier_type)
+table(urban_candidates$category_locomotion,urban_candidates$outlier_type)
+table(urban_candidates$category_heat,urban_candidates$outlier_type)
+table(urban_candidates$category_extended_cristal,urban_candidates$outlier_type)
+table(urban_candidates$category_strict_cristal,urban_candidates$outlier_type)
+
+length(unique(urban_candidates$gene))  ###74 distinct genes.
+
+
+
+
+urban_candidates_all=subset(genes_outlier, genes_outlier$outlier_type %in% c("outlier_urban_PC1"  ,"outlier_canopy_cover"   ,  "outlier_nightlight"    , "outlier_per_impervious" ))
+
+length(unique(urban_candidates_all$gene))  ### distinct genes.
+
+###We can output all candidate genes with their GO annotation if we have a list.
+
+
+urban_candidates_unique <- urban_candidates %>%
+  group_by(across(-outlier_type)) %>%  # Group by all columns except go_id
+  summarise(outlier_type = paste(unique(outlier_type), collapse = ";"), .groups = "drop")
+
+all_go_list_topdown=subset(anno,anno$external_gene_name%in%unique(urban_candidates$gene) | anno$ensembl_gene_id%in%unique(urban_candidates$gene))
+all_go_list_topdown_unique <- all_go_list_topdown %>%
+  group_by(across(-go_id)) %>%  # Group by all columns except go_id
+  summarise(go_id = paste(unique(go_id), collapse = ";"), .groups = "drop")
+colnames(urban_candidates_unique)[6]="ensembl_gene_id"
+final=merge(urban_candidates_unique,all_go_list_topdown_unique,by="ensembl_gene_id")
+
+write.table(final,file="Table_1_complement_GEA.txt",quote=F,sep="\t",row.names = F )
+
+length(unique(final$ensembl_gene_id))  ### distinct genes.
+
+
+
+all_candidates_unique <- all_candidates %>%
+  group_by(across(-outlier_type)) %>%  # Group by all columns except go_id
+  summarise(outlier_type = paste(unique(outlier_type), collapse = ";"), .groups = "drop")
+
+all_go_list_topdown=subset(anno,anno$external_gene_name%in%unique(all_candidates$gene) | anno$ensembl_gene_id%in%unique(all_candidates$gene))
+all_go_list_topdown_unique <- all_go_list_topdown %>%
+  group_by(across(-go_id)) %>%  # Group by all columns except go_id
+  summarise(go_id = paste(unique(go_id), collapse = ";"), .groups = "drop")
+colnames(all_candidates_unique)[6]="ensembl_gene_id"
+final=merge(all_candidates_unique,all_go_list_topdown_unique,by="ensembl_gene_id")
+
+write.table(final,file="Sup_Table_GEA_topdown.txt",quote=F,sep="\t",row.names = F )
+
+length(unique(final$ensembl_gene_id))  ### distinct genes.
+
+
+
+gene_outlier_unique <- genes_outlier %>%
+  group_by(across(-outlier_type)) %>%  # Group by all columns except go_id
+  summarise(outlier_type = paste(unique(outlier_type), collapse = ";"), .groups = "drop")
+
+all_go_list_topdown=subset(anno,anno$external_gene_name%in%unique(genes_outlier$gene) | anno$ensembl_gene_id%in%unique(genes_outlier$gene))
+all_go_list_topdown_unique <- all_go_list_topdown %>%
+  group_by(across(-go_id)) %>%  # Group by all columns except go_id
+  summarise(go_id = paste(unique(go_id), collapse = ";"), .groups = "drop")
+colnames(gene_outlier_unique)[6]="ensembl_gene_id"
+final=merge(gene_outlier_unique,all_go_list_topdown_unique,by="ensembl_gene_id")
+
+write.table(final,file="Sup_Table_all_GEA_outliers.txt",quote=F,sep="\t",row.names = F )
+
+length(unique(final$ensembl_gene_id))  ### distinct genes.
+
+
+```
+
+We can test whether the overlap we find between candidate genes and outlier SNPs is greater than expected by chance, taking gene length and relative distances into account:
+
+```{r}
+
+ ####Permutation test with chromosome circularization to test for significant differences in outlier overlap
+library(BiocParallel)
+
+
+
+n_outliers_GEA = genes_outlier[,1:(ncol(genes_outlier)-1)]
+n_outliers_GEA$replicate=0 ##observed
+genome=GenomicRanges::reduce(sumstats_1,min.gapwidth=1000000000)
+A=GRanges(outliers)
+
+ for (i in 1:10000){
+ perm=circularRandomizeRegions(A, genome=genome, max.retries=10,per.chromosome=TRUE)
+#perm=circularRandomizeRegions(A, genome=genome, max.retries=10,per.chromosome=FALSE)
+print(i)
+overlaps_perm <- findOverlaps(perm, custom_coords)
+perm_outlier=custom_coords[subjectHits(overlaps_perm)]
+perm_outlier$outlier_type <- perm$outlier[queryHits(overlaps_perm)]
+perm_outlier=unique(as.data.frame(perm_outlier,row.names=seq(1,length(perm_outlier@ranges) )))
+perm_outlier$replicate=i
+n_outliers_GEA=rbind(n_outliers_GEA,perm_outlier)
+ }
+
+
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+
+long_data <- n_outliers_GEA %>%
+  pivot_longer(
+    cols = starts_with("category_"),
+    names_to = "category",
+    values_to = "in_category"
+  ) %>%
+  filter(in_category == 1)  # keep only genes in that category
+
+
+category_counts <- long_data %>%
+  group_by(outlier_type, replicate, category) %>%
+  summarize(
+    n_genes = n_distinct(gene),
+    .groups = "drop"
+  )
+
+pdf(file="Permutation_tests_GEA_threshold1pc.pdf",width=18,height = 12)
+ggplot(category_counts %>% filter(replicate != 0), aes(x = n_genes)) +
+  geom_histogram(binwidth = 1, fill = "grey80", color = "black") +
+  geom_vline(data = category_counts %>% filter(replicate == 0),
+             aes(xintercept = n_genes),
+             color = "red", linewidth = 1) +
+  facet_grid(category ~ outlier_type, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Permutation distribution of category overlaps",
+       subtitle = "Red line = observed (replicate 0)",
+       x = "# overlapping category genes", y = "Permutation frequency")
+
+dev.off()
+pval_table <- category_counts %>%
+  group_by(outlier_type, category) %>%
+  summarize(
+    observed = n_genes[replicate == 0],
+    permuted = list(n_genes[replicate != 0]),
+    p_value = mean(n_genes[replicate != 0] >= n_genes[replicate == 0]),
+    .groups = "drop"
+  )
+write.table(as.data.frame(pval_table[,c(1,2,3,5)]),file="permutation_GEA.txt",quote=F,row.names=F,sep="\t")
+##only significant category at adj_p=0.01 is locomotion 
+
+
+
+
+ 
+ ###Significant overlap with all urban outlier tests at once?
+urban_candidates=subset(genes_outlier, genes_outlier$outlier_type %in% c("outlier_urban_PC1"  ,"outlier_canopy_cover"   ,  "outlier_nightlight"    , "outlier_per_impervious" ))
+
+
+
+n_outliers_GEA = urban_candidates[,1:(ncol(urban_candidates)-1)]
+n_outliers_GEA$outlier_type="all urban tests"
+n_outliers_GEA$replicate=0 ##observed
+n_outliers_GEA=unique(n_outliers_GEA)
+genome=GenomicRanges::reduce(sumstats_1,min.gapwidth=1000000000)
+A=GRanges(outliers)
+
+ for (i in 1:100){
+ perm=circularRandomizeRegions(A, genome=genome, max.retries=10,per.chromosome=TRUE)
+#perm=circularRandomizeRegions(A, genome=genome, max.retries=10,per.chromosome=FALSE)
+
+overlaps_perm <- findOverlaps(perm, custom_coords)
+perm_outlier=custom_coords[subjectHits(overlaps_perm)]
+perm_outlier$outlier_type <- perm$outlier[queryHits(overlaps_perm)]
+perm_outlier=subset(perm_outlier, perm_outlier$outlier_type %in% c("outlier_urban_PC1"  ,"outlier_canopy_cover"   ,  "outlier_nightlight"    , "outlier_per_impervious" ))
+perm_outlier=unique(as.data.frame(perm_outlier,row.names=seq(1,length(perm_outlier@ranges) )))
+perm_outlier$outlier_type="all urban tests"
+perm_outlier=unique(perm_outlier)
+perm_outlier$replicate=i
+n_outliers_GEA=rbind(n_outliers_GEA,perm_outlier)
+ }
+
+
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+
+long_data <- n_outliers_GEA %>%
+  pivot_longer(
+    cols = starts_with("category_"),
+    names_to = "category",
+    values_to = "in_category"
+  ) %>%
+  filter(in_category == 1)  # keep only genes in that category
+
+
+category_counts <- long_data %>%
+  group_by(outlier_type, replicate, category) %>%
+  summarize(
+    n_genes = n_distinct(gene),
+    .groups = "drop"
+  )
+
+pdf(file="Permutation_tests_GEA_threshold1pc_urban_combined.pdf",width=18,height = 12)
+ggplot(category_counts %>% filter(replicate != 0), aes(x = n_genes)) +
+  geom_histogram(binwidth = 1, fill = "grey80", color = "black") +
+  geom_vline(data = category_counts %>% filter(replicate == 0),
+             aes(xintercept = n_genes),
+             color = "red", linewidth = 1) +
+  facet_grid(category ~ outlier_type, scales = "free_y") +
+  theme_minimal() +
+  labs(title = "Permutation distribution of category overlaps",
+       subtitle = "Red line = observed (replicate 0)",
+       x = "# overlapping category genes", y = "Permutation frequency")
+
+dev.off()
+pval_table <- category_counts %>%
+  group_by(outlier_type, category) %>%
+  summarize(
+    observed = n_genes[replicate == 0],
+    permuted = list(n_genes[replicate != 0]),
+    p_value = mean(n_genes[replicate != 0] >= n_genes[replicate == 0]),
+    .groups = "drop"
+  )
+write.table(as.data.frame(pval_table[,c(1,2,3,5)]),file="permutation_GEA_urban_combined.txt",quote=F,row.names=F,sep="\t")
+##only significant category at adj_p=0.01 is locomotion 
+
+
+##perm_fn <- function(i) {
+##    tryCatch({
+##perm <- circularRandomizeRegions(A, genome = genome, max.retries = 10, per.chromosome = TRUE)
+##  overlaps_perm <- findOverlaps(perm, custom_coords)
+##  perm_outlier <- custom_coords[subjectHits(overlaps_perm)]
+##  perm_outlier$outlier_type <- perm$outlier[queryHits(overlaps_perm)]
+##  df <- as.data.frame(perm_outlier,row.names=NULL)
+##  df$replicate <- i
+##  df}, error = function(e) {
+##    warning(sprintf("Permutation %d failed: %s", i, e$message))
+##    NULL
+##  })
+##}
+### Set up parallel backend
+##param <- MulticoreParam(workers = 4)  # Adjust number of cores as needed
+##
+### Run permutations in parallel
+##n_perm <- 1000
+##perm_list <- bplapply(seq_len(n_perm), perm_fn, BPPARAM = param)
+##
+### Combine all results
+##n_outliers_GEA <- bind_rows(n_outliers_GEA, do.call(rbind, perm_list))
+##
+
+
+
+
+
+###GO term enrichment analysis, extract candidate genes overlapping with GEA, GWAS, behaviour, etc.
+
+###Last panel could be a map of structure for combined outliers, or urban PC, let's see. Sup Material could show for each category of outlier. requires filtering + PCA with plink but not too difficult.
+
+
+
+```
+
+At last, we can inspect the distribution of p-values in candidate genes v. permuted datasets: for example, do we find lower p-values for genes ranked in the lowest 5% of their category compared to permuted datasets? What about the median?
+
+```{r}
+
+library(GenomicRanges)
+library(GenomicInteractions)
+library(dplyr)
+library(tidyr)
+library(regioneR)  # for circularRandomizeRegions
+library(ggplot2)
+library(data.table)
+library(GenomicRanges)
+library(IRanges)
+library(regioneR)
+library(dplyr)
+library(BiocParallel)
+
+# Detect cores and set up a parallel backend
+param <- MulticoreParam(workers = 4)  # Adjust number of cores to your system
+
+
+# --- Input ---
+genes <- custom_coords  # gene annotations with category columns
+genome <- reduce(genes, min.gapwidth = 1e9)
+outliers <- gea_data
+
+# --- Step 1: Define tests ---
+tests <- grep("^canopy_cover|^env_PC|^nightlight|^per_impervious|^urban_PC1|^P_val_combined", 
+               names(outliers), value = TRUE)
+
+# --- Step 2: Annotate each SNP with its 50kb window ---
+outliers$window_start <- floor(outliers$POSITION / 50000) * 50000
+outliers$window_chr <- outliers$CHR
+outliers$window_end <- outliers$window_start + 49999
+
+outliers$CHR_0 <- paste0(outliers$CHR, "_", outliers$window_start)
+
+# --- Step 3: Minimum p-values per window for observed data ---
+get_min_p <- function(test) {
+  df <- outliers[, c("CHR_0", test)]
+  colnames(df) <- c("window", "pval")
+  df %>%
+    group_by(window) %>%
+    summarize(min_pval = min(pval, na.rm = TRUE), .groups = "drop") %>%
+    mutate(test = test)
+}
+observed_df <- bind_rows(lapply(tests, get_min_p))
+observed_df$replicate <- 0
+
+# --- Step 4: Map windows to coordinates ---
+window_coords <- outliers %>% 
+  dplyr::select(CHR_0, window_chr, window_start, window_end) %>% 
+  distinct()
+
+window_gr <- GRanges(seqnames = window_coords$window_chr,
+                     ranges = IRanges(start = window_coords$window_start, 
+                                      end = window_coords$window_end),
+                     CHR_0 = window_coords$CHR_0)
+
+# --- Step 5: Rotate genes instead of SNPs ---
+genes_gr <- genes  # GRanges with gene coords + category columns
+
+n_perm <- 100
+all_perms <- vector("list", n_perm)
+#perm_list <- bplapply(seq_len(n_perm), function(i) {
+
+for (i in seq_len(n_perm)) {
+  message("Permutation ", i, " of ", n_perm)
+
+  #genome_subset <- genome[seqnames(genome) %in% seqlevelsInUse(genes_gr)]
+  # Permute gene positions
+  permuted_genes <- circularRandomizeRegions(genes_gr, genome = genome, per.chromosome = TRUE)
+  #mcols(permuted_genes) <- mcols(genes_gr)  # retain categories
+
+  # Find overlaps with windows
+  ov <- findOverlaps(permuted_genes, window_gr)
+  overlapping_windows <- window_gr[subjectHits(ov)]
+  gene_ids <- queryHits(ov)
+
+# Build a data frame of overlapping windows and associated gene IDs
+overlap_df <- data.frame(
+  gene_id = gene_ids,
+  CHR_0 = overlapping_windows$CHR_0,
+  stringsAsFactors = FALSE
+)
+
+# Create all combinations of gene-window and test
+expanded_df <- merge(overlap_df, data.frame(test = tests), by = NULL)
+
+# Join with the p-values
+min_pvals <- observed_df %>% 
+  rename(CHR_0 = window)
+
+joined <- left_join(expanded_df, min_pvals, by = c("CHR_0", "test"))
+joined$replicate <- i
+#return(joined)},BPPARAM=param) ##and comment out below
+all_perms[[i]] <- joined
+
+}
+
+#all_perms <- bind_rows(perm_list) ##comment to remove for parallel
+
+perm_df <- bind_rows(all_perms)
+perm_df <- perm_df %>% 
+  rename(min_pval = min_pval)
+
+# --- Step 6: Get observed values (attach window -> gene once) ---
+ov_obs <- findOverlaps(genes_gr, window_gr)
+gene_ids_obs <- queryHits(ov_obs)
+window_chr0_obs <- window_gr$CHR_0[subjectHits(ov_obs)]
+
+obs_df <- expand.grid(gene_id = gene_ids_obs, test = tests, stringsAsFactors = FALSE)
+obs_df$CHR_0 <- rep(window_chr0_obs, times = length(tests))
+obs_df <- left_join(obs_df, observed_df, by = c("CHR_0" = "window", "test"))
+obs_df$replicate <- 0
+
+# --- Step 7: Combine observed and permuted ---
+combined <- bind_rows(obs_df, perm_df)
+combined$gene_id <- as.integer(combined$gene_id)
+
+# --- Step 8: Merge gene categories ---
+gene_cat <- as.data.frame(mcols(genes_gr))
+gene_cat$gene_id <- seq_len(nrow(gene_cat))
+long_combined <- left_join(combined, gene_cat, by = "gene_id")
+
+category_cols <- grep("^category_", names(long_combined), value = TRUE)
+
+# --- Step 9: Summarize per category ---
+summary_list <- lapply(category_cols, function(cat) {
+  df <- long_combined %>% filter(.data[[cat]] == 1)
+  df %>%
+    group_by(test, replicate) %>%
+    summarize(
+      across(
+        .cols = min_pval,
+        .fns = list(
+          q05 = ~ quantile(., probs = 0.05, na.rm = TRUE),
+          q10 = ~ quantile(., probs = 0.10, na.rm = TRUE),
+          q25 = ~ quantile(., probs = 0.25, na.rm = TRUE),
+          q50 = ~ quantile(., probs = 0.50, na.rm = TRUE),
+          q75 = ~ quantile(., probs = 0.75, na.rm = TRUE),
+          q90 = ~ quantile(., probs = 0.90, na.rm = TRUE),
+          q95 = ~ quantile(., probs = 0.95, na.rm = TRUE)
+        )
+      ),
+      .groups = "drop"
+    ) %>%
+    mutate(category = cat)
+  })
+summary_df <- bind_rows(summary_list)
+
+
+# Define quantiles of interest
+quantiles <- c(0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
+
+
+
+summary_df <- bind_rows(summary_list)
+
+long_df <- summary_df %>%
+  pivot_longer(cols = starts_with("min_pval_"), names_to = "quantile", values_to = "value")
+
+# Split observed and permuted
+observed_vals <- long_df %>% filter(replicate == 0)
+permuted_vals <- long_df %>% filter(replicate != 0)
+
+# Calculate empirical p-values
+pval_summary <- observed_vals %>%
+  rename(observed = value) %>%
+  left_join(
+    permuted_vals %>%
+      group_by(test, category, quantile) %>%
+      summarize(pval = mean(value < observed_vals$value[observed_vals$test == test &
+                                                         observed_vals$category == category &
+                                                         observed_vals$quantile == quantile], na.rm = TRUE),
+                .groups = "drop"),
+    by = c("test", "category", "quantile")
+  )
+
+print(pval_summary)
+write.table(pval_summary,file="permutation_test_distributions.txt",quote=F,sep="\t",row.names=F)
+
+# Plot observed vs permuted
+library(ggplot2)
+ggplot(category_summary, aes(x = replicate, y = -log10(median_p), color = replicate == 0)) +
+  geom_boxplot(aes(group = replicate)) +
+  facet_wrap(~Category + Test, scales = "free_y") +
+  theme_minimal() +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "Median -log10(p) per gene category/test across permutations")
+
+```
+
+### GO term enrichment analysis
+
+We also run two more GO term enrichment analysis: one based on the multinomial test on env_PC + urban_PC, and the other based specifically on urban association (found significant in urban_PC1, per_impervious, nightlight, and canopy cover).
+
+```{r}
+
+
+library(biomaRt)
+library(dplyr)
+library(GOfuncR)
+
+ensembl <- useMart("ensembl",host="https://may2024.archive.ensembl.org", dataset = "acarolinensis_gene_ensembl")  ##This was the version used for the paper, latest one is weird with missing GO terms
+getBM(mart=ensembl,
+      attributes=c('ensembl_gene_id','external_gene_name', 'go_id', 'name_1006'),
+      filters="external_gene_name",
+      values="Tl")
+anno <- getBM(mart=ensembl,attributes=c("ensembl_gene_id", "external_gene_name", "go_id", "chromosome_name", "start_position", "end_position", "strand", "description"))
+
+go_annot=anno[,c(1,3)]
+colnames(go_annot)=c("gene","go_id")
+custom_coords=anno[,c(1,4,5,6)]
+custom_coords$chromosome_name=gsub('.1','',custom_coords$chromosome_name)
+colnames(custom_coords)=c("gene","chr","start","end")
+
+###use gea_long/outliers object  instead
+
+all_regions=gea_long
+all_regions$start=all_regions$POSITION-50000
+all_regions$end=all_regions$POSITION+50000
+All=GenomicRanges::reduce(GRanges(all_regions),min.gapwidth=1000000000)
+
+all_regions$is_candidate=ifelse(all_regions$outlier=="outlier_P_val_combined",1,0)
+#all_regions$is_candidate=ifelse(all_regions$outlier %in% c("outlier_canopy_cover", "outlier_nightlight","outlier_per_impervious","outlier_urban_PC1",1,0)
+                                
+candidateregions=GenomicRanges::reduce(GRanges(subset(all_regions,all_regions$is_candidate==1)),min.gapwidth=1) ###We basically merge outliers if found at < 50kb.
+backgroundregions=GenomicRanges::setdiff(All, candidateregions)
+  
+candidateregions=as.data.frame(candidateregions)
+backgroundregions=as.data.frame(backgroundregions)
+backgroundregions$start=ifelse(backgroundregions$start<1,1,backgroundregions$start)
+candidateregions$start=ifelse(candidateregions$start<1,1,candidateregions$start)
+
+candidateregions$regions=paste(paste(candidateregions$seqnames,candidateregions$start,sep=":"),candidateregions$end,sep="-")
+candidateregions$candidate=1
+backgroundregions$regions=paste(paste(backgroundregions$seqnames,backgroundregions$start,sep=":"),backgroundregions$end,sep="-")
+backgroundregions$candidate=0
+all_regions=rbind(backgroundregions,candidateregions)
+all_regions=all_regions[order(all_regions[,1],all_regions[,2]),]
+all_regions=all_regions[,c(6,7)]
+###use genes object  instead
+
+res_region = go_enrich(all_regions, n_randsets=100, annotations=go_annot, gene_coords=custom_coords, regions=TRUE,circ_chrom=T)
+stats_region = res_region[[1]]
+head(stats_region)
+top_gos_hyper = subset(stats_region,stats_region$raw_p_overrep<0.01 & stats_region$ontology=="biological_process")[, 'node_id']
+plot_anno_scores(res_region, top_gos_hyper[1:10], annotations=go_annot)
+Table3=subset(stats_region,stats_region$raw_p_overrep<=0.01 & stats_region$ontology=="biological_process")
+write.table(Table3,file="Table_3.txt",quote=F,sep="\t",row.names = F)
+
+
+
+
+
+###Urban specific test
+
+all_regions=gea_long
+all_regions$start=all_regions$POSITION-50000
+all_regions$end=all_regions$POSITION+50000
+all_regions$is_candidate=ifelse(all_regions$outlier %in% c("outlier_canopy_cover", "outlier_nightlight","outlier_per_impervious","outlier_urban_PC1"),1,0)
+                                
+candidateregions=GenomicRanges::reduce(GRanges(subset(all_regions,all_regions$is_candidate==1)),min.gapwidth=1) ###We basically merge outliers if found at < 50kb.
+backgroundregions=GenomicRanges::setdiff(All, candidateregions)
+  
+candidateregions=as.data.frame(candidateregions)
+backgroundregions=as.data.frame(backgroundregions)
+backgroundregions$start=ifelse(backgroundregions$start<1,1,backgroundregions$start)
+candidateregions$start=ifelse(candidateregions$start<1,1,candidateregions$start)
+
+candidateregions$regions=paste(paste(candidateregions$seqnames,candidateregions$start,sep=":"),candidateregions$end,sep="-")
+candidateregions$candidate=1
+backgroundregions$regions=paste(paste(backgroundregions$seqnames,backgroundregions$start,sep=":"),backgroundregions$end,sep="-")
+backgroundregions$candidate=0
+all_regions=rbind(backgroundregions,candidateregions)
+all_regions=all_regions[order(all_regions[,1],all_regions[,2]),]
+all_regions=all_regions[,c(6,7)]
+###use genes object  instead
+
+res_region = go_enrich(all_regions, n_randsets=100, annotations=go_annot, gene_coords=custom_coords, regions=TRUE,circ_chrom=T)
+stats_region = res_region[[1]]
+head(stats_region)
+top_gos_hyper = subset(stats_region,stats_region$raw_p_overrep<0.01 & stats_region$ontology=="biological_process")[, 'node_id']
+plot_anno_scores(res_region, top_gos_hyper[1:10], annotations=go_annot)
+Table4=subset(stats_region,stats_region$raw_p_overrep<=0.01 & stats_region$ontology=="biological_process")
+write.table(Table4,file="Table_4.txt",quote=F,sep="\t",row.names = F)
+
+
+
+```
+
+###Figure 5
+
+```{r}
+
+library(ComplexUpset)
+library(dplyr)
+library(tidyr)
+library(scales)
+
+urban=subset(gea_data,gea_data$Test == "urban_PC1" | gea_data$Test =="P_val_combined")
+highlight_regions <- data.frame(
+  CHR = rep(c(2, 4, 2, 1),2),
+  Test = rep(c("P_val_combined", "urban_PC1"), each = 4),  # or adjust based on which panel(s) should show what
+  xmin = rep(c(24310000, 121495000, 70500000, 114000000),2),
+  xmax = rep(c(24760000, 123655000, 72500000, 125000000),2),
+  ymin = -Inf,
+  ymax = Inf,
+  region_label = rep(c("Fst peak (chr2)", "Fst peak (chr4)", "Hox cluster", "Winchell GEA"),2)
+)
+panelA=ggplot(urban, aes(x = POSITION, y = -log10(adj_P), color = factor(CHR))) +
+  geom_point_rast(size = 0.8) +
+  scale_color_manual(values = rep(c("darkgrey", "black"), 16))  +
+  geom_point_rast(data = subset(urban, highlight2 == "yes"),
+                  aes(x = POSITION, y = -log10(adj_P)), color = "red", size = 1.5) +
+  geom_point_rast(data = subset(urban, highlight3 == "yes"),
+                  aes(x = POSITION, y = -log10(adj_P)), color = "darkorange", size = 1.5) +
+  geom_point_rast(data = subset(urban, highlight == "yes"),
+                  aes(x = POSITION, y = -log10(adj_P)), color = "darkgreen", size = 1.5) +
+  # Add the rectangles for the regions
+geom_rect(data = highlight_regions, 
+          aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax), 
+          fill = "orange", alpha = 0.2, color = "black",
+          inherit.aes = FALSE) +  facet_grid(Test ~ CHR, scales = "free_y") +
+  theme_bw() +
+  labs(x = "Genomic Position", y = "-log10(B-H adjusted p-value)", title = "") +
+  theme(legend.position = "none")
+
+
+##We want to show chr2, chr4, Winchell GEA chr1 and HOX on chr2. All Manhattan plots as Sup Mat, and take P_value combined and urban_PC1 for the main Figure 5 (easier and does a better job)
+
+zooms=subset(gea_data,(gea_data$CHR==2 & gea_data$POSITION> (24410000 - 1e6) & gea_data$POSITION < (24660000 + 1e6)) | (gea_data$CHR==4 & gea_data$POSITION> (122495000 - 1e6) & gea_data$POSITION < (122655000 + 1e6)) | (gea_data$CHR==2 & gea_data$POSITION> 70.5e6 & gea_data$POSITION < 72.5e6) | (gea_data$CHR==1 & gea_data$POSITION> 114e6 & gea_data$POSITION < 125e6) )
+zooms$region=ifelse(zooms$CHR==4,"Top Fst outlier region, chr4","NA")
+zooms$region=ifelse(zooms$CHR==2 & zooms$POSITION<50e6,"Top Fst outlier region, chr2",zooms$region)
+zooms$region=ifelse(zooms$CHR==2 & zooms$POSITION>50e6,"Hox genes region, chr2",zooms$region)
+zooms$region=ifelse(zooms$CHR==1,"Winchell's GEA candidate region, chr1",zooms$region)
+
+zooms <- zooms %>%
+  mutate(highlight = ifelse(-log10(adj_P) > 2, "highlight", "normal"))
+
+
+# Plot with conditional coloring
+ggplot(zooms, aes(x = POSITION, y = -log10(adj_P), color = highlight)) +
+  geom_point_rast(size = 0.8) +
+  scale_color_manual(values = c("highlight" = "red", "normal" = "darkgrey")) +
+  facet_grid(Test ~ region, scales = "free") +
+  theme_bw() +
+  labs(x = "Genomic Position", y = "-log10(B-H adjusted p-value)", title = "") +
+  theme(legend.position = "none")
+
+###Panel B
+
+zooms=subset(urban,(urban$CHR==2 & urban$POSITION> (24410000 - 1e6) & urban$POSITION < (24660000 + 1e6)) | (urban$CHR==4 & urban$POSITION> (122495000 - 1e6) & urban$POSITION < (122655000 + 1e6)) | (urban$CHR==2 & urban$POSITION> 70.5e6 & urban$POSITION < 72.5e6) | (urban$CHR==1 & urban$POSITION> 114e6 & urban$POSITION < 125e6) )
+
+zooms$region=ifelse(zooms$CHR==4,"4 Top Fst outlier region, chr4","NA")
+zooms$region=ifelse(zooms$CHR==2 & zooms$POSITION<50e6,"3 Top Fst outlier region, chr2",zooms$region)
+zooms$region=ifelse(zooms$CHR==2 & zooms$POSITION>50e6,"2 Hox genes region, chr2",zooms$region)
+zooms$region=ifelse(zooms$CHR==1,"1 Winchell's GEA candidate region, chr1",zooms$region)
+
+library(GenomicRanges)
+library(dplyr)
+
+
+
+
+snp_gr <- GRanges(seqnames = zooms$CHR,
+                  ranges = IRanges(start = zooms$POSITION, width = 1))
+
+# --- Step 2: Filter and convert genes to GRanges
+final_2 <- subset(final, outlier_type %in% c("outlier_P_val_combined", "outlier_urban_PC1"))
+
+gene_gr <- GRanges(seqnames = final_2$seqnames,
+                   ranges = IRanges(start = final_2$start, end = final_2$end),
+                   gene = final_2$ensembl_gene_id,
+                   ext_name = final_2$external_gene_name)
+gene_gr_expanded <- resize(gene_gr, width = width(gene_gr) + 50000, fix = "center")
+gene_gr=gene_gr_expanded
+# --- Step 3: Find overlaps and annotate SNPs
+hits <- findOverlaps(snp_gr, gene_gr)
+zooms$outlier_gene <- "normal"
+zooms$outlier_gene[queryHits(hits)] <- "outlier"
+
+zooms$gene <- NA
+zooms$gene[queryHits(hits)] <- mcols(gene_gr)$gene[subjectHits(hits)]
+zooms$ext_name <- NA
+zooms$ext_name[queryHits(hits)] <- mcols(gene_gr)$ext_name[subjectHits(hits)]
+#zooms$ext_name<-ifelse(zooms$ext_name=="",zooms$gene,zooms$ext_name) #too many unnamed genes, we just show the ones with an external name.
+# --- Step 4: Create label dataframe per Test per gene
+label_df <- zooms %>%
+  filter(outlier_gene == "outlier") %>%
+  filter(!is.na(gene)) %>%
+  group_by(Test, gene) %>%
+  slice_min(order_by = adj_P, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  filter(-log10(adj_P) > 2)  # Only label significant ones
+
+zooms$highlight <- ifelse(-log10(zooms$adj_P) > 2, "highlight", "normal")
+
+# --- Step 5: Plot
+
+panelB=ggplot(zooms, aes(x = POSITION, y = -log10(adj_P))) +
+geom_point_rast(aes(color = highlight), size = 0.8) +
+scale_color_manual(values = c("normal" = "darkgrey", "highlight" = "orange")) +
+  geom_text_repel(data = label_df,
+                  aes(label = ext_name),
+                  size = 3.5,   fontface = "bold",
+max.overlaps = 50, segment.size = 0.5) +
+  facet_grid(Test ~ region, scales = "free") + scale_x_continuous(labels = label_scientific()) +
+  theme_bw() +
+  labs(x = "Genomic Position", y = "-log10(B-H adjusted p-value)") +
+  theme(legend.position = "none")
+
+
+library(magick)
+library(grid)
+library(gridExtra)
+pdf(file="GEA_Figure5.pdf",width=22,height=10)
+ggarrange(panelA, panelB,labels = c("A", "B"),font.label = list(size = 28, color = "black", face = "bold"),ncol = 2)
+dev.off()
+
+
+##to generate an upset plot with genes, we have a file with 2 columns named sharing_outlier_tests.txt
+
+gene_outlier_unique <- genes_outlier 
+
+all_go_list_topdown=subset(anno,anno$external_gene_name%in%unique(genes_outlier$gene) | anno$ensembl_gene_id%in%unique(genes_outlier$gene))
+all_go_list_topdown_unique <- all_go_list_topdown %>%
+  group_by(across(-go_id)) %>%  # Group by all columns except go_id
+  summarise(go_id = paste(unique(go_id), collapse = ";"), .groups = "drop")
+colnames(gene_outlier_unique)[6]="ensembl_gene_id"
+final=merge(gene_outlier_unique,all_go_list_topdown_unique,by="ensembl_gene_id")
+
+last=final[,c(which(colnames(final)=="ensembl_gene_id"),which(colnames(final)=="outlier_type"))]
+last=subset(last,last$outlier_type !="outlier_P_val_combined")
+binary_matrix <- last %>%
+  distinct() %>%  # Remove any accidental duplicates
+  mutate(value = 1) %>%
+  pivot_wider(names_from = outlier_type, values_from = value, values_fill = list(value = 0))
+
+# Step 2: Make UpSet plot
+upset(
+  binary_matrix,
+  intersect = colnames(binary_matrix)[-1],  # All columns except gene ID
+  base_annotations = list(
+    'Intersection size' = intersection_size()
+  ),
+  name = "Outlier sets"
+)
+
+```
+
+### Further check FST in How genes region
+
+```{r}
+
+
+###Check Fst in the large chr2 block overlapping Hox genes
+sumstats1=as.data.frame(fread("Selection_tests/All_results_5kb_FST_PBS_ANGSD_countryside.txt",h=T))
+
+hox_coords=anno[grep("HOX", anno$external_gene_name),]
+hox_coords=unique(subset(hox_coords,hox_coords$chromosome_name==2))
+Hox=subset(sumstats1,sumstats1$chr=="chr2")
+Hox=Hox[order(Hox$midPos),]
+par(mfrow=c(2,2))
+plot(Hox$midPos,Hox$Fst12,xlim=c(55e6,83e6),xlab="Position",ylab="Fst",type="l")
+plot(Hox$midPos,Hox$PBS2,xlim=c(55e6,83e6),xlab="Position",ylab="PBS",type="l")
+
+Hox$highlight <- FALSE
+
+for (i in 1:nrow(hox_coords)) {
+  Hox$highlight <- Hox$highlight | 
+    (Hox$midPos >= hox_coords$start_position[i] & 
+     Hox$midPos <= hox_coords$end_position[i])
+}
+
+A=ggplot(Hox, aes(x = midPos, y = Fst12)) +
+  geom_point(color = "grey60", size = 0.7) +
+  # Then, overlay points in red where highlight == TRUE
+  geom_point(data = subset(Hox, highlight == TRUE),
+             aes(x = midPos, y = Fst12),
+             color = "red", size = 2) +
+  theme_minimal() +
+  labs(x = "Genomic position", y = "Fst") +
+  theme(panel.grid.minor = element_blank()) + xlim(55e6,83e6) 
+
+
+
+# Example plot for PBS2
+B=ggplot(Hox, aes(x = midPos, y = PBS2)) +
+  geom_point(color = "grey60", size = 0.7) +
+  # Then, overlay points in red where highlight == TRUE
+  geom_point(data = subset(Hox, highlight == TRUE),
+             aes(x = midPos, y = PBS2),
+             color = "red", size = 2) +
+  theme_minimal() +
+  labs(x = "Genomic position", y = "PBS") +
+  theme(panel.grid.minor = element_blank()) + xlim(55e6,83e6) 
+
+
+
+
+sumstats1=as.data.frame(fread("Selection_tests/All_results_50kb_FST_PBS_ANGSD_countryside.txt",h=T))
+Hox=subset(sumstats1,sumstats1$chr=="chr2")
+Hox=Hox[order(Hox$midPos),]
+plot(Hox$midPos,Hox$Fst12,xlim=c(55e6,83e6),xlab="Position",ylab="Fst",type="l")
+plot(Hox$midPos,Hox$PBS2,xlim=c(55e6,83e6),xlab="Position",ylab="PBS",type="l")
+
+
+Hox$highlight <- FALSE
+
+for (i in 1:nrow(hox_coords)) {
+  Hox$highlight <- Hox$highlight | 
+    (Hox$midPos >= hox_coords$start_position[i] & 
+     Hox$midPos <= hox_coords$end_position[i])
+}
+
+# Example plot for Fst12
+C=ggplot(Hox, aes(x = midPos, y = Fst12)) +
+  geom_point(color = "grey60", size = 0.7) +
+  # Then, overlay points in red where highlight == TRUE
+  geom_point(data = subset(Hox, highlight == TRUE),
+             aes(x = midPos, y = Fst12),
+             color = "red", size = 2) +
+  theme_minimal() +
+  labs(x = "Genomic position", y = "Fst") +
+  theme(panel.grid.minor = element_blank()) + xlim(55e6,83e6) 
+
+
+
+# Example plot for PBS2
+D=ggplot(Hox, aes(x = midPos, y = PBS2)) +
+  geom_point(color = "grey60", size = 0.7) +
+  # Then, overlay points in red where highlight == TRUE
+  geom_point(data = subset(Hox, highlight == TRUE),
+             aes(x = midPos, y = PBS2),
+             color = "red", size = 2) +
+  theme_minimal() +
+  labs(x = "Genomic position", y = "PBS") +
+  theme(panel.grid.minor = element_blank()) + xlim(55e6,83e6) 
+
+ggarrange(A,B,C,D)
+
+
+
+
+```
+
+### PCA and map of outliers (urban outliers v. P_value combined outliers)
+
+First we need to extract all candidate SNPs.
+
+```{r}
+
+urban=unique(subset(gea_long,gea_long$adj_P<=0.01 & gea_long$Test  %in% c("urban_PC1"  ,"canopy_cover"   ,  "nightlight"    , "per_impervious" ))[,c(1,2,2)])
+urban$rangeID=seq(1,nrow(urban))
+multinomial=unique(subset(gea_long,gea_long$adj_P<=0.01 & gea_long$Test  %in% c("P_val_combined" ))[,c(1,2,2)])
+multinomial$rangeID=seq(1,nrow(multinomial))
+
+##6740 unique variants for urban
+##33806 unique variants for multinomial
+write.table(urban,file="urban_SNPs_positions_outliers.txt",sep="\t",col.names = F,row.names = F,quote=F)
+write.table(multinomial,file="multinomial_SNPs_positions_outliers.txt",sep="\t",col.names = F,row.names = F,quote=F)
+
+```
+
+In bash, to also obtain non-synonymous variants, if any.
+
+```{bash}
+
+sed -i -e "s:GL:chrUn_GL:" urban_SNPs_positions_outliers.txt
+sed -i -e "s:^c\t:chrLGc\t:" urban_SNPs_positions_outliers.txt
+sed -i -e "s:^a:chrLGa:" urban_SNPs_positions_outliers.txt
+sed -i -e "s:^b:chrLGb:" urban_SNPs_positions_outliers.txt
+
+grep CDS Anolis_carolinensis.AnoCar2.0v2.114.gtf | sed -E 's/^([^[:space:]]+)\.1(\t)/\1\2/'  | sed "s:^GL:chrUn_GL:" | sed "s:^c\t:chrLGc\t:" | sed  "s:^a:chrLGa:" | sed "s:^b:chrLGb:"  > CDS_positions.gtf
+
+sed -e "s:^1\t:chr1\t:" urban_SNPs_positions_outliers.txt |sed -e "s:^2\t:chr2\t:" | sed -e "s:^3\t:chr3\t:" | sed -e "s:^4\t:chr4\t:" |
+sed -e "s:^5\t:chr5\t:" | sed -e "s:^6\t:chr6\t:" > urban_SNPs_forvcftools.txt
+
+module load vcftools
+vcftools --gzvcf All_imputed.vcf.gz --positions urban_SNPs_forvcftools.txt --recode --recode-INFO-all --out urban_SNPs
+
+module load snpeff/
+cp /shared/ifbstor1/software/miniconda/envs/snpeff-5.2/share/snpeff-5.2-0/snpEff.config .
+cp  urban_SNPs.recode.vcf save.vcf
+sed -i -e "s:chrUn_::"  urban_SNPs.recode.vcf
+sed -i -e "s:chrLG::"  urban_SNPs.recode.vcf
+sed -i -e "s:chr::"  urban_SNPs.recode.vcf
+sed -i -E 's/^(AA[^[:space:]]*|GL[^[:space:]]*)/\1.1/'  urban_SNPs.recode.vcf
+
+mkdir data
+snpEff -c snpEff.config -v AnoCar2.0v2.105 urban_SNPs.recode.vcf -V > urban_ann.vcf
+
+grep MODERATE urban_ann.vcf | cut -f8 | cut -f7 -d ";" | cut -f4 -d "|" | sort | uniq 
+###13 unique genes
+grep HIGH urban_ann.vcf | cut -f8 | cut -f7 -d ";" | cut -f4 -d "|" | sort | uniq 
+##1 unique gene
+
+grep MODERATE urban_ann.vcf | cut -f8 | cut -f7 -d ";" | sed "s:|:\t:g" >> list_urban_nonsyn_genes.txt
+
+grep HIGH urban_ann.vcf | cut -f8 | cut -f7 -d ";" | sed "s:|:\t:g" >> list_urban_nonsyn_genes.txt
+
+
+sed -i -e "s:GL:chrUn_GL:" multinomial_SNPs_positions_outliers.txt
+sed -i -e "s:^c\t:chrLGc\t:" multinomial_SNPs_positions_outliers.txt
+sed -i -e "s:^a:chrLGa:" multinomial_SNPs_positions_outliers.txt
+sed -i -e "s:^b:chrLGb:" multinomial_SNPs_positions_outliers.txt
+sed -i -e "s:^d:chrLGd:" multinomial_SNPs_positions_outliers.txt
+sed -i -e "s:^f:chrLGf:" multinomial_SNPs_positions_outliers.txt
+sed -i -e "s:^g:chrLGg:" multinomial_SNPs_positions_outliers.txt
+sed -i -e "s:^h:chrLGh:" multinomial_SNPs_positions_outliers.txt
+
+plink --bfile filtered --pca --allow-extra-chr \
+      --extract range urban_SNPs_positions_outliers.txt \
+      --out urban_SNPs
+
+plink --bfile filtered --pca --allow-extra-chr \
+      --extract range multinomial_SNPs_positions_outliers.txt \
+      --out multinomial_SNPs
+```
+
+In R, we can visualize the PCA on outlier SNPs.
+
+```{r}
+library(geodata)
+library(terra)
+library(adegenet)
+library(vegan)
+library(data.table)
+library(ggplot2)
+library(robust)
+library(qvalue)
+library(psych)
+library(terra)
+library(raster)
+library(rworldmap)
+library(dplyr)
+library(caret)
+
+coords = read.table("FEEMS.coord",h=F)
+colnames(coords)=c("lon","lat")
+pca=read.table("urban_SNPs.eigenvec")
+eigenvals=read.table("urban_SNPs.eigenval")
+(eigenvals$V1/sum(eigenvals$V1))[1:2]  
+colnames(pca)=c("Individual","FID",paste("PC",seq(1:(ncol(pca)-2)),sep=""))
+total=cbind(pca,coords)
+
+colnumber=ncol(total)
+map.polygon <- getMap(resolution = "low")
+
+
+ggplot() +
+    # Plot the map
+    geom_path(data = map.polygon, aes(x = long, y = lat, group = group), color = "black") +
+    
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = lon, y = lat, fill = PC1), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+    
+    scale_fill_gradient2(low = "darkblue", high = "red") +  
+    xlim(-91.5, -89.3) + 
+    ylim(29, 31) +
+    coord_equal() + 
+    xlab("Longitude") +
+    ylab("Latitude") + 
+    theme_bw()
+
+
+
+
+ggplot() +
+    # Plot the map
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = PC1, y = PC2, fill = paste(lon,lat)), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+        coord_equal() + 
+    xlab("PC1") +
+    ylab("PC2") + 
+    theme_bw()
+
+
+
+
+
+coords = read.table("FEEMS.coord",h=F)
+colnames(coords)=c("lon","lat")
+pca=read.table("multinomial_SNPs.eigenvec")
+eigenvals=read.table("multinomial_SNPs.eigenval")
+(eigenvals$V1/sum(eigenvals$V1))[1:2]  
+colnames(pca)=c("Individual","FID",paste("PC",seq(1:(ncol(pca)-2)),sep=""))
+total=cbind(pca,coords)
+
+colnumber=ncol(total)
+map.polygon <- getMap(resolution = "low")
+
+
+ggplot() +
+    # Plot the map
+    geom_path(data = map.polygon, aes(x = long, y = lat, group = group), color = "black") +
+    
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = lon, y = lat, fill = PC1), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+    
+    scale_fill_gradient2(low = "darkblue", high = "red") +  
+    xlim(-91.5, -89.3) + 
+    ylim(29, 31) +
+    coord_equal() + 
+    xlab("Longitude") +
+    ylab("Latitude") + 
+    theme_bw()
+
+
+ggplot() +
+    # Plot the map
+    # Add lines from original position to jittered position
+    # Plot jittered points
+    geom_point(data = total, aes(x = PC1, y = PC2, fill = paste(lon,lat)), 
+               size = 5, shape = 21, color = "black") +  # Black outline for visibility
+        coord_equal() + 
+    xlab("PC1") +
+    ylab("PC2") + 
+    theme_bw()
+
+
+
+```
+
+## Using WZA on RDA results to obtain estimates over 50kb non-overlapping windows.
+
+First we need to prepare the input, which should be rather easy.
+
+We need the allele frequencies for our markers:
+
+```{bash}
+plink --bfile filtered --allow-extra-chr --double-id  --freq --out filtered
+```
+
+"As input, the [general_WZA_script.py](https://github.com/TBooker/WZA/blob/master/general_WZA_script.py) requires one input file, a table of GEA scores for your SNPs. The script refers to this file as the"correlations" file.
+
+This table is required to contain the following information:
+
+-   Scores for individual SNPs (e.g. these could be *p*-values from a correlation analysis or Bayes factors)
+
+-   A variable that indicates the windows that SNPs belong to (e.g. a column of gene names, or analysis window names)
+
+-   The average minor allele frequency across populations"
+
+We can generate the first two windows, using the Z scores for the first RD axis in the analysis correcting for population structure with 2 PCs.
+
+```{r}
+#RDA2=as.data.frame(fread("RDApartial_loadings_2PCs.txt.gz"))
+RDA2=as.data.frame(fread("RDApartial_loadings.txt.gz"))
+
+freq=as.data.frame(fread("filtered.frq"))
+colnames(RDA2)=c("MRK","CHR","POSITION","score_RDA1","score_RDA2","score_RDA3","score_RDA4","CCA_RDA1","CCA_RDA2","CCA_RDA3","CCA_RDA4")
+
+zscore <- function(x){
+  score <- (x-mean(x))/ sd(x)     # find loadings +/-z sd from mean loading     
+}
+
+Z=cbind(RDA2[,2:3],zscore(RDA2$score_RDA1))
+colnames(Z)=c("CHR","POSITION","Zscore")
+
+chi_sq_values <- Z$Zscore^2
+lambda <- median(chi_sq_values) / qchisq(0.5, df = 1)
+
+Z$P_val =  2 * (1 - pnorm(abs(Z$Zscore)))/max(1,lambda)
+options(scipen=999999)
+
+Z$window=paste(Z$CHR,(floor(Z$POSITION/50e3)*50e3),sep="_")
+Z$MAF=freq$MAF
+colnames(Z)=c("CHR","POSITION","Zscore","pVal","window_names","MAF")
+write.csv(Z[,4:6],file="P-values_WZA_2PCs_RDA1.csv",quote=F,col.names=T,row.names=F)
+
+
+
+RDA=as.data.frame(fread("RDApartial_4RDAs.txt.gz"))
+
+freq=as.data.frame(fread("filtered.frq"))
+colnames(RDA)=c("CHR","POSITION","P_val","Q_val")
+RDA$window=paste(RDA$CHR,(floor(RDA$POSITION/50e3)*50e3),sep="_")
+Z=cbind(RDA[,c(1:3,5)],freq$MAF)
+colnames(Z)=c("CHR","POSITION","pVal","window_names","MAF")
+
+write.csv(Z,file="P-values_WZA_3PCs_RDA_Mahala_4RDAs.csv",quote=F,col.names=T,row.names=F)
+
+
+```
+
+Once done, on a PC:
+
+```{bash}
+          
+conda activate pixy
+ 
+cut -f3,18,19 LFMM_scan_K3_total.txt > temp.txt
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat P_val_combined \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 50kb_window_P_val_combined.csv \
+                              --sep "\t" 
+cut -f4,18,19 LFMM_scan_K3_total.txt > temp.txt
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat canopy_cover \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 50kb_window_canopy_cover.csv \
+                              --sep "\t" 
+cut -f6,18,19 LFMM_scan_K3_total.txt > temp.txt
+
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat env_PC1 \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 50kb_window_env_PC1.csv \
+                             --sep "\t" 
+
+cut -f8,18,19 LFMM_scan_K3_total.txt > temp.txt
+
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat env_PC2 \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 50kb_window_env_PC2.csv \
+                              --sep "\t" 
+cut -f10,18,19 LFMM_scan_K3_total.txt > temp.txt
+
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat env_PC3 \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 50kb_window_env_PC3.csv \
+                              --sep "\t" 
+cut -f12,18,19 LFMM_scan_K3_total.txt > temp.txt
+
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat nightlight \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 50kb_window_nightlight.csv \
+                              --sep "\t" 
+
+cut -f14,18,19 LFMM_scan_K3_total.txt > temp.txt
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat per_impervious \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 50kb_window_per_impervious.csv \
+                              --sep "\t" 
+                              
+cut -f16,18,19 LFMM_scan_K3_total.txt > temp.txt
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat urban_PC1 \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 50kb_window_urban_PC1.csv \
+                              --sep "\t" 
+                              
+                              
+                              
+###5kb windows
+awk '{window=int($2/5000)*5000; print $0 "\t" $1 "_" window}' LFMM_scan_K3_total.txt | cut -f1-18,20 | cut -f3,18,19 > temp.txt
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat P_val_combined \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 5kb_window_P_val_combined.csv \
+                              --sep "\t" 
+awk '{window=int($2/5000)*5000; print $0 "\t" $1 "_" window}' LFMM_scan_K3_total.txt | cut -f1-18,20 |cut -f4,18,19  > temp.txt
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat canopy_cover \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 5kb_window_canopy_cover.csv \
+                              --sep "\t" 
+awk '{window=int($2/5000)*5000; print $0 "\t" $1 "_" window}' LFMM_scan_K3_total.txt | cut -f1-18,20 |cut -f6,18,19 > temp.txt
+
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat env_PC1 \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 5kb_window_env_PC1.csv \
+                             --sep "\t" 
+
+awk '{window=int($2/5000)*5000; print $0 "\t" $1 "_" window}' LFMM_scan_K3_total.txt | cut -f1-18,20 | cut -f8,18,19 > temp.txt
+
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat env_PC2 \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 5kb_window_env_PC2.csv \
+                              --sep "\t" 
+awk '{window=int($2/5000)*5000; print $0 "\t" $1 "_" window}' LFMM_scan_K3_total.txt | cut -f1-18,20 | cut -f10,18,19 > temp.txt
+
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat env_PC3 \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 5kb_window_env_PC3.csv \
+                              --sep "\t" 
+awk '{window=int($2/5000)*5000; print $0 "\t" $1 "_" window}' LFMM_scan_K3_total.txt | cut -f1-18,20 | cut -f12,18,19  > temp.txt
+
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat nightlight \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 5kb_window_nightlight.csv \
+                              --sep "\t" 
+
+awk '{window=int($2/5000)*5000; print $0 "\t" $1 "_" window}' LFMM_scan_K3_total.txt | cut -f1-18,20 | cut -f14,18,19 > temp.txt
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat per_impervious \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 5kb_window_per_impervious.csv \
+                              --sep "\t" 
+                              
+awk '{window=int($2/5000)*5000; print $0 "\t" $1 "_" window}' LFMM_scan_K3_total.txt | cut -f1-18,20 | cut -f16,18,19 > temp.txt
+python ./WZA/general_WZA_script.py --correlations  temp.txt \
+                              --summary_stat urban_PC1 \
+                              --window CHR_0 \
+                              --MAF MAF \
+                              --output 5kb_window_urban_PC1.csv \
+                              --sep "\t" 
+                              
+  
+```
+
+Then in R, for the Manhattan plots, and then GO term enrichment analysis.
+
+```{r}
+# Load required libraries
+library(ggplot2)
+library(ggrastr)
+library(qvalue)
+library(tidyr)
+library(dplyr)
+library(readr)
+library(stringr)
+library(data.table)
+library(purrr)
+
+# List all relevant CSV files
+
+files <- list.files(pattern = "^50kb_window_.*\\.csv$")
+
+gea_data <- map_dfr(files, function(file) {
+  test_name <- str_extract(file, "(?<=50kb_window_).*(?=\\.csv)")
+
+  read_csv(file, show_col_types = FALSE) %>%
+    dplyr::select(gene, Z_pVal) %>%
+    mutate(Test = test_name)
+})
+
+
+gea_data$gene <- gsub("chrLG", "", gea_data$gene)
+gea_data$gene <- gsub("chrUn_", "", gea_data$gene)
+gea_data$gene <- gsub("chr", "", gea_data$gene)
+
+
+gea_data <- gea_data %>%
+  separate(gene, into = c("CHR", "POSITION"), sep = "_") %>%
+  mutate(POSITION = as.numeric(POSITION))
+
+
+gea_data$CHR <- gsub("chrLG", "", gea_data$CHR)
+gea_data$CHR <- gsub("chrUn_", "", gea_data$CHR)
+gea_data$CHR <- gsub("chr", "", gea_data$CHR)
+
+setDT(gea_data)
+
+intervals_of_interest <- df_narrow
+colnames(intervals_of_interest)[1]="chr"
+# Mark the intervals of interest
+
+setDT(intervals_of_interest)
+
+# Add key columns
+setkey(intervals_of_interest, chr, start, end)
+setkey(gea_data, CHR, POSITION, POSITION)
+# Use non-equi join
+gea_data[, highlight := "no"]
+matches <- foverlaps(gea_data[, .(CHR, POSITION, POS_END = POSITION)], 
+                     intervals_of_interest[, .(chr, start, end)],
+                     by.x = c("CHR", "POSITION", "POS_END"),
+                     by.y = c("chr", "start", "end"),
+                     nomatch = 0L)
+
+# Set highlight to "yes" for matching rows
+gea_data[matches, highlight := "yes", on = .(CHR, POSITION)]
+
+chr=c("4","2")
+start=c(121495000,23410000)
+end=c(123655000,25660000)
+intervals_of_interest=as.data.frame(cbind(chr,start,end))
+
+intervals_of_interest$chr=as.factor(intervals_of_interest$chr)
+intervals_of_interest$start=as.integer(intervals_of_interest$start)
+intervals_of_interest$end=as.integer(intervals_of_interest$end)
+
+
+setDT(intervals_of_interest)
+
+# Add key columns
+setkey(intervals_of_interest, chr, start, end)
+setkey(gea_data, CHR, POSITION, POSITION)
+
+# Use non-equi join
+gea_data[, highlight2 := "no"]
+matches <- foverlaps(gea_data[, .(CHR, POSITION, POS_END = POSITION)], 
+                     intervals_of_interest[, .(chr, start, end)],
+                     by.x = c("CHR", "POSITION", "POS_END"),
+                     by.y = c("chr", "start", "end"),
+                     nomatch = 0L)
+
+# Set highlight2 to "yes" for matching rows
+gea_data[matches, highlight2 := "yes", on = .(CHR, POSITION)]
+
+
+
+
+
+intervals_of_interest <- df_extended
+colnames(intervals_of_interest)[1]="chr"
+# Mark the intervals of interest
+
+setDT(intervals_of_interest)
+
+# Add key columns
+setkey(intervals_of_interest, chr, start, end)
+setkey(gea_data, CHR, POSITION, POSITION)
+
+# Use non-equi join
+gea_data[, highlight3 := "no"]
+matches <- foverlaps(gea_data[, .(CHR, POSITION, POS_END = POSITION)], 
+                     intervals_of_interest[, .(chr, start, end)],
+                     by.x = c("CHR", "POSITION", "POS_END"),
+                     by.y = c("chr", "start", "end"),
+                     nomatch = 0L)
+
+# Set highlight3 to "yes" for matching rows
+gea_data[matches, highlight3 := "yes", on = .(CHR, POSITION)]
+
+
+
+intervals_of_interest <- df_behav
+colnames(intervals_of_interest)[1]="chr"
+
+setDT(intervals_of_interest)
+
+# Add key columns
+setkey(intervals_of_interest, chr, start, end)
+setkey(gea_data, CHR, POSITION, POSITION)
+
+# Use non-equi join
+gea_data[, highlight4 := "no"]
+matches <- foverlaps(gea_data[, .(CHR, POSITION, POS_END = POSITION)], 
+                     intervals_of_interest[, .(chr, start, end)],
+                     by.x = c("CHR", "POSITION", "POS_END"),
+                     by.y = c("chr", "start", "end"),
+                     nomatch = 0L)
+
+# Set highlight4 to "yes" for matching rows
+gea_data[matches, highlight4 := "yes", on = .(CHR, POSITION)]
+
+
+
+
+gea_data=subset(gea_data,(gea_data$CHR>0 & gea_data$CHR<7))
+
+
+# Reshape gea_data to long format
+desired_order <- c("P_val_combined", "env_PC1", "env_PC2", "env_PC3",
+                   "urban_PC1", "canopy_cover", "nightlight", "per_impervious")
+
+gea_data$Test <- factor(gea_data$Test, levels = desired_order)
+
+
+pdf(file="GEA_Manhattan_pvalues_50kb.pdf",width=15,height=9)
+ggplot(gea_data, aes(x = POSITION, y = -log10(Z_pVal), color = factor(CHR))) +
+    geom_point_rast(size = 0.8) +
+    scale_color_manual(values = rep(c("darkgrey", "black"), 16)) +
+    geom_point_rast(data = subset(gea_data, highlight == "yes"),
+                    aes(x = POSITION, y = -log10(Z_pVal)), color = "darkgreen", size = 1.5) +
+    geom_point_rast(data = subset(gea_data, highlight2 == "yes"),
+                    aes(x = POSITION, y = -log10(Z_pVal)), color = "red", size = 1.5) +
+    geom_point_rast(data = subset(gea_data, highlight3 == "yes"),
+                    aes(x = POSITION, y = -log10(Z_pVal)), color = "darkorange", size = 1.5) +
+    geom_point_rast(data = subset(gea_data, highlight4 == "yes"),
+                    aes(x = POSITION, y = -log10(Z_pVal)), color = "lightblue", size = 1.5) +
+    facet_grid(Test ~ CHR, scales = "free_y") +
+    theme_minimal() +
+    labs(x = "Genomic Position", y = "-log10(p-value)", title = "Manhattan Plots by Test and Chromosome") +
+    theme(legend.position = "none")
+dev.off()
+
+
+
+```
+
+5kb windows
+
+```{r}
+# Load required libraries
+library(ggplot2)
+library(ggrastr)
+library(qvalue)
+library(tidyr)
+library(dplyr)
+library(readr)
+library(stringr)
+library(data.table)
+library(purrr)
+
+# List all relevant CSV files
+
+files <- list.files(pattern = "^5kb_window_.*\\.csv$")
+
+gea_data <- map_dfr(files, function(file) {
+  test_name <- str_extract(file, "(?<=5kb_window_).*(?=\\.csv)")
+
+  read_csv(file, show_col_types = FALSE) %>%
+    dplyr::select(gene, Z_pVal) %>%
+    mutate(Test = test_name)
+})
+
+
+gea_data$gene <- gsub("chrLG", "", gea_data$gene)
+gea_data$gene <- gsub("chrUn_", "", gea_data$gene)
+gea_data$gene <- gsub("chr", "", gea_data$gene)
+
+
+gea_data <- gea_data %>%
+  separate(gene, into = c("CHR", "POSITION"), sep = "_") %>%
+  mutate(POSITION = as.numeric(POSITION))
+
+
+gea_data$CHR <- gsub("chrLG", "", gea_data$CHR)
+gea_data$CHR <- gsub("chrUn_", "", gea_data$CHR)
+gea_data$CHR <- gsub("chr", "", gea_data$CHR)
+
+setDT(gea_data)
+
+intervals_of_interest <- df_narrow
+colnames(intervals_of_interest)[1]="chr"
+# Mark the intervals of interest
+
+setDT(intervals_of_interest)
+
+# Add key columns
+setkey(intervals_of_interest, chr, start, end)
+setkey(gea_data, CHR, POSITION, POSITION)
+# Use non-equi join
+gea_data[, highlight := "no"]
+matches <- foverlaps(gea_data[, .(CHR, POSITION, POS_END = POSITION)], 
+                     intervals_of_interest[, .(chr, start, end)],
+                     by.x = c("CHR", "POSITION", "POS_END"),
+                     by.y = c("chr", "start", "end"),
+                     nomatch = 0L)
+
+# Set highlight to "yes" for matching rows
+gea_data[matches, highlight := "yes", on = .(CHR, POSITION)]
+
+chr=c("4","2")
+start=c(121495000,23410000)
+end=c(123655000,25660000)
+intervals_of_interest=as.data.frame(cbind(chr,start,end))
+
+intervals_of_interest$chr=as.factor(intervals_of_interest$chr)
+intervals_of_interest$start=as.integer(intervals_of_interest$start)
+intervals_of_interest$end=as.integer(intervals_of_interest$end)
+
+
+setDT(intervals_of_interest)
+
+# Add key columns
+setkey(intervals_of_interest, chr, start, end)
+setkey(gea_data, CHR, POSITION, POSITION)
+
+# Use non-equi join
+gea_data[, highlight2 := "no"]
+matches <- foverlaps(gea_data[, .(CHR, POSITION, POS_END = POSITION)], 
+                     intervals_of_interest[, .(chr, start, end)],
+                     by.x = c("CHR", "POSITION", "POS_END"),
+                     by.y = c("chr", "start", "end"),
+                     nomatch = 0L)
+
+# Set highlight2 to "yes" for matching rows
+gea_data[matches, highlight2 := "yes", on = .(CHR, POSITION)]
+
+
+
+
+
+intervals_of_interest <- df_extended
+colnames(intervals_of_interest)[1]="chr"
+# Mark the intervals of interest
+
+setDT(intervals_of_interest)
+
+# Add key columns
+setkey(intervals_of_interest, chr, start, end)
+setkey(gea_data, CHR, POSITION, POSITION)
+
+# Use non-equi join
+gea_data[, highlight3 := "no"]
+matches <- foverlaps(gea_data[, .(CHR, POSITION, POS_END = POSITION)], 
+                     intervals_of_interest[, .(chr, start, end)],
+                     by.x = c("CHR", "POSITION", "POS_END"),
+                     by.y = c("chr", "start", "end"),
+                     nomatch = 0L)
+
+# Set highlight3 to "yes" for matching rows
+gea_data[matches, highlight3 := "yes", on = .(CHR, POSITION)]
+
+
+
+intervals_of_interest <- df_behav
+colnames(intervals_of_interest)[1]="chr"
+
+setDT(intervals_of_interest)
+
+# Add key columns
+setkey(intervals_of_interest, chr, start, end)
+setkey(gea_data, CHR, POSITION, POSITION)
+
+# Use non-equi join
+gea_data[, highlight4 := "no"]
+matches <- foverlaps(gea_data[, .(CHR, POSITION, POS_END = POSITION)], 
+                     intervals_of_interest[, .(chr, start, end)],
+                     by.x = c("CHR", "POSITION", "POS_END"),
+                     by.y = c("chr", "start", "end"),
+                     nomatch = 0L)
+
+# Set highlight4 to "yes" for matching rows
+gea_data[matches, highlight4 := "yes", on = .(CHR, POSITION)]
+
+
+
+
+gea_data=subset(gea_data,(gea_data$CHR>0 & gea_data$CHR<7))
+
+
+# Reshape gea_data to long format
+desired_order <- c("P_val_combined", "env_PC1", "env_PC2", "env_PC3",
+                   "urban_PC1", "canopy_cover", "nightlight", "per_impervious")
+
+gea_data$Test <- factor(gea_data$Test, levels = desired_order)
+
+
+pdf(file="GEA_Manhattan_pvalues_5kb.pdf",width=15,height=9)
+ggplot(gea_data, aes(x = POSITION, y = -log10(Z_pVal), color = factor(CHR))) +
+    geom_point_rast(size = 0.8) +
+    scale_color_manual(values = rep(c("darkgrey", "black"), 16)) +
+    geom_point_rast(data = subset(gea_data, highlight == "yes"),
+                    aes(x = POSITION, y = -log10(Z_pVal)), color = "darkgreen", size = 1.5) +
+    geom_point_rast(data = subset(gea_data, highlight2 == "yes"),
+                    aes(x = POSITION, y = -log10(Z_pVal)), color = "red", size = 1.5) +
+    geom_point_rast(data = subset(gea_data, highlight3 == "yes"),
+                    aes(x = POSITION, y = -log10(Z_pVal)), color = "darkorange", size = 1.5) +
+    geom_point_rast(data = subset(gea_data, highlight4 == "yes"),
+                    aes(x = POSITION, y = -log10(Z_pVal)), color = "lightblue", size = 1.5) +
+    facet_grid(Test ~ CHR, scales = "free_y") +
+    theme_minimal() +
+    labs(x = "Genomic Position", y = "-log10(p-value)", title = "Manhattan Plots by Test and Chromosome") +
+    theme(legend.position = "none")
+dev.off()
+
+
+
+```
